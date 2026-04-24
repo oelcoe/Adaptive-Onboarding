@@ -48,11 +48,11 @@ def response_interval_bounds(
 
     tau_r = -inf for response == 0, tau_r+1 = +inf for response == n_categories - 1.
     """
-    mu_eta, var_eta = projected_mean_variance(belief, item)
-    gamma = float(np.sqrt(var_eta + 1.0)) # + 1 because of the observation noise.
     if not (0 <= response < item.n_categories):
         raise ValueError(f"response must be in {{0, ..., {item.n_categories - 1}}}.")
-
+    mu_eta, var_eta = projected_mean_variance(belief, item)
+    gamma = float(np.sqrt(var_eta + 1.0)) # + 1 because of the observation noise.
+    
     if response == 0:
         alpha = -np.inf # -inf because the lowest response category has no lower bound
     else:
