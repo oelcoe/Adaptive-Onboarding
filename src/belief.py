@@ -7,21 +7,20 @@ from numpy.typing import NDArray
 
 
 def _is_spd(Sigma: NDArray[np.float64], rtol: float = 1e-9, atol: float = 1e-12) -> bool:
-    S = np.asarray(Sigma, dtype=float)
-    if S.ndim != 2 or S.shape[0] != S.shape[1]:
-        return False
-    if not np.allclose(S, S.T, rtol=rtol, atol=atol):
-        return False
-    try:
-        np.linalg.cholesky(S)
-    except np.linalg.LinAlgError:
-        return False
-    return True
+    # check if the covariance matrix is symmetric positive definite
+    # return True if the covariance matrix is symmetric positive definite, False otherwise
+    # rtol: relative tolerance
+    # atol: absolute tolerance
+    return np.allclose(Sigma, Sigma.T, rtol=rtol, atol=atol) and np.all(np.linalg.eigvals(Sigma) > 0)
 
 
 @dataclass(frozen=True)
 class BeliefState:
-    """Current Gaussian belief over the latent user state."""
+    """
+    Current Gaussian belief over the latent user state.
+    mu: mean of the belief
+    Sigma: covariance matrix of the belief
+    """
 
     mu: NDArray[np.float64]
     Sigma: NDArray[np.float64]

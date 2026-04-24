@@ -9,21 +9,26 @@ from .item_bank import Item
 
 
 def projected_mean_variance(belief: BeliefState, item: Item) -> tuple[float, float]:
-    """Return mean and variance of a^T theta under the current belief."""
-    mu_eta = float(item.a @ belief.mu)
-    var_eta = max(float(item.a @ belief.Sigma @ item.a), 0.0)
+    """Takes current belief and item, returns mean and variance of a^T theta under the current belief. 
+    Since theta is Gaussian, the mean and variance of a^T theta are also Gaussian."""
+    mu_eta = float(item.a @ belief.mu) # mean of a^T theta under the current belief
+    var_eta = max(float(item.a @ belief.Sigma @ item.a), 0.0) # variance of a^T theta under the current belief
     return mu_eta, var_eta
 
 
 def normalized_update_direction(belief: BeliefState, item: Item) -> NDArray[np.float64]:
     """
-    Return q = Sigma a / sqrt(a^T Sigma a), the rank-one update direction
+    Calculates direction in the latent space along which the belief is updated.
+    Return q = Sigma a / sqrt(a^T Sigma a), the rank-one covariance-weighted update direction
     in the ellipsoidal / Gaussian projection formulas.
+    This is the same for all response categories of a given item. This is used in the update
+    mechanism after observing a response and for the myopic score calculation. The surrogate does not use this. 
+
     """
     _, var_eta = projected_mean_variance(belief, item)
     if var_eta <= 0:
         raise ValueError("Projected variance must be positive.")
-    return belief.Sigma @ item.a / np.sqrt(var_eta)
+    return belief.Sigma @ item.a / np.sqrt(var_eta) # question direction is adjusted by the current uncertainty geometry
 
 
 def response_interval_bounds(
@@ -32,25 +37,29 @@ def response_interval_bounds(
     response: int,
 ) -> tuple[float, float, float]:
     """
+    This function turns the response category into a interval in the latent space:
+    Once the ordinal response tells us that the latent score lies in an interval, 
+    the Bayesian update becomes a truncated-normal conditioning problem. 
+    This function computes the scalar quantities needed for that.
     Return (alpha, beta, gamma), where
-    gamma = sqrt(a^T Sigma a + 1),
+    gamma = sqrt(a^T Sigma a + 1), 
     alpha = (tau_r   - a^T mu) / gamma,
     beta  = (tau_r+1 - a^T mu) / gamma.
 
     tau_r = -inf for response == 0, tau_r+1 = +inf for response == n_categories - 1.
     """
     mu_eta, var_eta = projected_mean_variance(belief, item)
-    gamma = float(np.sqrt(var_eta + 1.0))
+    gamma = float(np.sqrt(var_eta + 1.0)) # + 1 because of the observation noise.
     if not (0 <= response < item.n_categories):
         raise ValueError(f"response must be in {{0, ..., {item.n_categories - 1}}}.")
 
     if response == 0:
-        alpha = -np.inf
+        alpha = -np.inf # -inf because the lowest response category has no lower bound
     else:
         alpha = (float(item.thresholds[response - 1]) - mu_eta) / gamma
 
     if response >= item.n_categories - 1:
-        beta = np.inf
+        beta = np.inf # +inf because the highest response category has no upper bound
     else:
         beta = (float(item.thresholds[response]) - mu_eta) / gamma
 
@@ -62,6 +71,9 @@ def _truncated_normal_coefficients(
     beta: float,
 ) -> tuple[float, float, float]:
     """
+    Once the ordinal response tells us that the latent score lies in certain interval, 
+    the Bayesian update becomes a truncated-normal conditioning problem. 
+    This function computes the scalar quantities needed for that.
     For a standard normal truncated to [alpha, beta), compute:
       p   = Phi(beta) - Phi(alpha)                           (probability mass)
       lam = [phi(alpha) - phi(beta)] / p                     (truncated mean)
@@ -92,6 +104,7 @@ def one_step_posterior_coefficients(
     response: int,
 ) -> tuple[float, float, float]:
     """
+
     Exact one-step posterior-moment coefficients (Prop. 1, Corollary 1).
 
     Returns (m, v, p_r) where:
@@ -120,20 +133,24 @@ def update_belief(
     response: int,
 ) -> BeliefState:
     """
-    Rank-one Gaussian moment-matching update after observing `response` to `item`
+    Rank-one Gaussian moment-matching update after observing a response category to a given item.
     (Proposition 1, Equations mu-update and sigma-update).
 
     mu_{k+1}    = mu_k    + q * m
     Sigma_{k+1} = Sigma_k + (v - 1) * outer(q, q)
 
-    where q = Sigma a / sqrt(a^T Sigma a).
+    where q = Sigma a / sqrt(a^T Sigma a) is the covariance-weighted update direction. 
+    Geometrically, the posterior mean shift and covariance correction act only in this one direction.
     """
     m, v, _ = one_step_posterior_coefficients(belief, item, response)
     q = normalized_update_direction(belief, item)
 
-    mu_new = belief.mu + q * m
-    Sigma_new = belief.Sigma + (v - 1.0) * np.outer(q, q)
-    Sigma_new = 0.5 * (Sigma_new + Sigma_new.T)
+    mu_new = belief.mu + q * m # mean shift in the update direction (Proposition 1, Eq. mu-update)
+    Sigma_new = belief.Sigma + (v - 1.0) * np.outer(q, q) # covariance correction in the update direction (Proposition 1, Eq. sigma-update) - because this is a rank-one update, the covariance contracriction acts only in the update direction
+    asym = np.linalg.norm(Sigma_new - Sigma_new.T, ord="fro")
+    if asym > 1e-10:
+        raise ValueError(f"Unusually large asymmetry {asym:.3e} in the covariance matrix.")
+    Sigma_new = 0.5 * (Sigma_new + Sigma_new.T) # ensure symmetry of the covariance matrix in floating point arithmetic
 
     return BeliefState(mu=mu_new, Sigma=Sigma_new)
 
@@ -145,10 +162,15 @@ def damped_update_belief(
 ) -> BeliefState:
     """
     Response-adaptive damped Gaussian projection
+    = If the observed response was very unlikely under the current belief, 
+    we may want to avoid shrinking uncertainty too aggressively after just one surprising answer.
     (Section "Response-adaptive damping variant", Eqs. damped_m, damped_v,
     damped_mu, damped_sigma).
 
-    Step size epsilon = p_r (predictive probability of the realized category).
+    This starts off with the one-step posterior coefficients, dampens them and then uses the sam
+    update mechanism as in the one-step posterior coefficients.
+
+    The step size epsilon = p_r (predictive probability of the realized category).
     Damped scalar moments:
       bar_m = epsilon * m / (v + epsilon * (1 - v))
       bar_v =           v / (v + epsilon * (1 - v))
