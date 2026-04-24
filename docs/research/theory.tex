@@ -1,0 +1,2618 @@
+% Paste your full research document here.
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\title{Adaptive Ordinal Questioning Theory}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\pagenumbering{Roman}
+\tableofcontents
+
+\newpage
+
+In the following, points written in \textcolor{blue}{blue} are unclear/to be discussed or current intuition waiting to be confirmed. Text in \textcolor{gray}{gray} is intuition/background info for me.\\
+
+
+\chapter{Introduction}
+\pagenumbering{arabic}
+In recent years, digital mental-health tools have gained increasing attention as scalable ways to support people who face barriers to traditional care. For many users, these tools can be low-threshold forms of support, complements to existing care, or possible gateways to clinician-led services. Their appeal is easy to understand: access to mental-health support remains uneven, while stigma, privacy concerns, cost, distance, and long waiting times continue to make seeking help difficult. At the same time, the usefulness of such platforms is critically dependent on their ability to match users to appropriate content or interventions. This poses an onboarding problem: before a platform can personalize support, it must first learn enough about a new user's needs, preferences, and constraints. However, standard recommendation and preference-elicitation approaches may be inappropriate in mental health settings. Showing misaligned content to a user purely for exploratory purposes can be costly in a high-stakes domain, while the most informative questions can also impose the greatest costs for privacy, trust, or engagement.
+
+Add paper road map!
+
+\newpage
+\chapter{Motivation}\label{chapter:moti}
+The World Health Organization reported that nearly 1 in 7 people worldwide were living with a mental health disorder in 2021. Although effective prevention and treatment options exist, most people with mental health disorders lack access to care \cite{WHO2025MentalDisorders}. 
+
+In the United States, the U.S. Department of Health $\&$ Human Services reported in March 2026 that 148.6 million people were living in officially designated mental-health professional shortage areas, with rural regions accounting for roughly 61$\%$ of these mental-health \say{deserts} \cite{hrsa2025hpsa_q2}. Studies show that the situation is even more challenging outside the developed world. In addition to the shortage of providers and long travel distances, social stigma worsens isolation by dissuading people from seeking help \cite{clement2015stigma_helpseeking}. Many affected individuals are struggling but unsure whether they need treatment at all, what type of treatment might be right for them, or may not be ready to work with a clinician.
+
+
+
+In parallel, more users are turning to general-purpose AI tools for health and wellness support. OpenAI reports that health is already one of the most common uses of ChatGPT, with hundreds of millions asking health-related questions each week. Roughly one in four regular users submits a healthcare prompt weekly \cite{openai2026healthcareally}. Recent headlines emphasize the dangers and limits of such unguided systems \cite{hall2025chatgpt_dangerous_advice, kuznia_gordon_lavandera2025chatgpt_suicide_lawsuit, luo2025digital_therapist, wu2025illinois_ai_therapy_ban}. Clear guardrails, boundaries, and a careful approach to tailoring support are urgently needed.
+
+
+Digital mental health platforms have emerged as one promising response to these gaps \cite{linardon2024mindfulness_apps, loechner2025digital_interventions_mental_health}. Platforms often offer structured libraries of content, such as psychoeducational modules, guided exercises, or self-assessment tools, that users can engage with at their own pace, without requiring a clinician at every step. They serve as accessible forms of support, complement existing treatments, and act as entry points that encourage users to engage with appropriate in-person or clinician-led care \cite{huang2024dmhi_waiting_lists}. Their value, however, depends critically on matching users to content that is actually relevant to their situation. A user who receives modules misaligned with their needs --- too intensive, too generic, or simply beside the point --- is unlikely to remain engaged, and disengagement in a mental health context carries real costs \cite{borghouts2021engagement, smith2025engagement_attrition_dmh}. Before a platform can make any meaningful recommendation to a new user, the system must quickly learn enough about their needs, preferences, and constraints to provide useful support.
+This leads to an onboarding problem. When a new user signs up, the system initially knows almost nothing about them. Classic static questionnaires offer an imperfect solution: they ask every new user the same questions, regardless of what has already been learned, without adapting to previous responses. By contrast, the adaptive elicitation literature shows how questionnaires can be designed sequentially, with each answer updating the system's beliefs and informing which question to ask next. This sequential view is central in adaptive conjoint and related Bayesian preference-elicitation methods, where question selection is treated as a decision problem under uncertainty and has been shown to lead to significant individual-level improvements \cite{poly, ellipsoidal, toubia2013deep}.
+
+In mental health contexts, though, onboarding involves more than just gathering information about the user. The very questions that best uncover what a user really needs --- about their mood, daily functioning, or level of distress --- are often exactly the ones that can feel most intrusive. Sensitive questions, therefore, come at a cost: they may be the most diagnostically informative, but asking them risks discomfort, mistrust, or disengagement. Research in human-computer interaction and survey methodology indicates that people's willingness to disclose information depends on factors such as mode, privacy, and conversational context, and that these influences are particularly strong for sensitive topics, whereas answers to non-sensitive questions tend to be far less affected \cite{lind2013survey_disclosure_computers}. Respondents may answer strategically, give socially desirable responses, skip questions, or completely disengage when questions feel too intrusive or are asked at the wrong time \cite{pickard2016self_disclosure_avatars, papneja2025self_disclosure_cai}.
+
+This trade-off motivates our work. We treat sensitivity as a behavioral variable that can influence both the informativeness of a response and the cost of asking the question. This creates a sequential trade-off: the platform aims to reduce uncertainty rapidly to enable better personalization, yet must do so while honoring the privacy, trust, and behavioral constraints inherent to such sensitive settings. Our goal, therefore, is to frame onboarding as an adaptive, sequential decision-making problem under uncertainty, in which the value of each question reflects not only its informational gain, but also its potential privacy, trust, and engagement costs.
+
+
+
+\newpage 
+\chapter{Related Literature}
+Papers that we are inspired by:
+- Psychology: CAT Our setting is related to CAT in that questions are selected adaptively from prior responses, but it differs in objective: rather than focusing solely on psychometric efficiency, we study adaptive questioning as part of a sequential personalization problem in which information gain must be balanced against behavioral costs such as sensitivity and dropout.Psychiatric CAT systems are implemented explicitly in this style. For example, in the development of a computerized adaptive test for depression, Gibbons et al.\cite{gibbons2012catdepression}  describe CAT as combining a calibrated question bank with an question selection rule and a stopping criterion, and they select questions using a maximum-information strategy (with termination based on the error of the latent trait estimate or low remaining information in the bank).
+- Polyhedral papers
+- Ellipsoidal paper
+
+Papers that we use:
+- question response theory stuff
+- Adaptive preference elicitation
+- Minka
+- Krause: Adaptive Submodularity inspired/motivated by the diminishing returns structure of the problem
+
+Contrasting Approaches:
+- Collaborative filtering
+- Bayesian Learning
+
+
+This perspective also clarifies how our setting departs from neighboring lines of work. Psychologists and survey methodologists have extensively examined how to pose sensitive questions more carefully, and computerized adaptive testing has demonstrated how to select questions efficiently for individual-level measurement. However, these literatures are typically developed independently: one is centered on truthful responding and survey design, the other on measurement efficiency. Our framework brings them together. We focus on adaptive, user-specific inference for personalization in an environment where the sensitivity of questions directly shapes both what can be learned and the cost of asking. This is exactly what makes adaptive onboarding with sensitivity constraints a natural and necessary formulation. Our setting diverges from standard onboarding and recommendation models because the platform cannot treat early interactions as free exploration. It must infer a user’s latent needs and preferences from a short sequence of queries, while incorporating the fact that some questions impose higher behavioral costs than others. As a result, onboarding becomes a sequential decision problem under uncertainty, where the value of each question depends not only on its informational gain, but also on its possible privacy, trust, and engagement costs.
+
+
+\newpage
+\chapter{Preliminairies}
+The following notation is used throughout:
+
+\begin{enumerate}
+    \question[$u$] a user/respondent,
+    \question[$i$] an quesrion/question,
+    \question[$k$] a step,
+    \question[$r$] a response category.
+\end{enumerate}
+- norm 
+- rank one?
+- residual
+
+
+NEED:
+prior and posterior distribution
+multivariate normal / Gaussian distribution
+mean vector and covariance matrix
+credibility ellipsoid
+determinant-based uncertainty measure, including D-error if you use it again later
+moment matching, because it is not only CBC-specific and also matters for your own inference layer
+\section{Probability Theory}
+In one and multiple dimensions:
+- Random variable
+- PDF
+- CDF
+- Expectation
+- Variance
+- Moment Matching
+- Covariance
+- Covariance Matrix
+- Uncertainty Ellipsoid
+- Cramer Rao
+- Normal Distribution: cdf and pdf, p(x leq a)
+- Bernoulli Distribution -"-
+- logistic distribution
+- Independence, Conditional independence
+- Bayes, Bayesian updates with prior and posterior
+- Chi squared quantile
+- Filtration ?
+- Fisher Information?
+- Maximum likelihood
+\begin{definition}[Chi-square quantile]
+Let $\chi^2_d$ denote the chi-square distribution with $d$ degrees of freedom.
+For $\rho \in (0,1)$, define its $\rho$-quantile by
+\begin{equation*}
+q_{d,\rho}
+:=
+\inf\{t \ge 0 : \mathbb P(\chi^2_d \le t) \ge \rho\}.
+\end{equation*}
+\end{definition}
+
+\begin{definition}[Gaussian credibility ellipsoid]
+Let $\theta \sim \mathcal N(\mu,\Sigma)$ with $\mu \in \mathbb R^d$ and
+$\Sigma \in \mathbb R^{d\times d}$ symmetric positive definite. For $r>0$, define
+the ellipsoid
+\begin{equation*}
+\mathcal E(\mu,\Sigma,r)
+:=
+\left\{
+\theta \in \mathbb R^d :
+(\theta-\mu)^\top \Sigma^{-1}(\theta-\mu) \le r
+\right\}.
+\end{equation*}
+In particular, for a credibility level $\rho \in (0,1)$, we call
+\begin{equation*}
+\mathcal E(\mu,\Sigma,q_{d,\rho})
+\end{equation*}
+the Gaussian credibility ellipsoid at level $\rho$.
+\end{definition}
+
+\begin{proposition}[Coverage and volume of a Gaussian ellipsoid]
+\label{prop:gaussian_ellipsoid}
+Let $\theta \sim \mathcal N(\mu,\Sigma)$ with $\Sigma \succ 0$, and let
+$\rho \in (0,1)$. Then
+\begin{equation*}
+\mathbb P\!\bigl(\theta \in \mathcal E(\mu,\Sigma,q_{d,\rho})\bigr)=\rho.
+\end{equation*}
+Moreover, the volume of $\mathcal E(\mu,\Sigma,r)$ is
+\begin{equation*}
+\operatorname{vol}\!\bigl(\mathcal E(\mu,\Sigma,r)\bigr)
+=
+\operatorname{vol}(B_d)\, r^{d/2}\, \det(\Sigma)^{1/2},
+\end{equation*}
+where $B_d=\{x\in\mathbb R^d:\|x\|_2\le 1\}$ is the $d$-dimensional unit ball.
+In particular, for fixed confidence level $\rho$, the ellipsoid volume is proportional
+to $\det(\Sigma)^{1/2}$.
+\end{proposition}
+
+\begin{proof}
+If $\theta \sim \mathcal N(\mu,\Sigma)$, then
+\begin{equation*}
+(\theta-\mu)^\top \Sigma^{-1}(\theta-\mu) \sim \chi^2_d.
+\end{equation*}
+Hence
+\begin{equation*}
+\mathbb P\!\bigl(\theta \in \mathcal E(\mu,\Sigma,q_{d,\rho})\bigr)
+=
+\mathbb P\!\bigl(\chi^2_d \le q_{d,\rho}\bigr)
+=
+\rho.
+\end{equation*}
+For the volume formula, write $\theta=\mu+\Sigma^{1/2}x$. Under this change of
+variables, $\mathcal E(\mu,\Sigma,r)$ is the image of the Euclidean ball
+$\{x:\|x\|_2^2\le r\}$, and the Jacobian factor is $\det(\Sigma^{1/2})
+= \det(\Sigma)^{1/2}$. This yields
+\begin{equation*}
+\operatorname{vol}\!\bigl(\mathcal E(\mu,\Sigma,r)\bigr)
+=
+\operatorname{vol}(B_d)\, r^{d/2}\, \det(\Sigma)^{1/2}.
+\end{equation*}
+\end{proof}
+For a Gaussian belief state $\theta \sim \mathcal N(\mu,\Sigma)$, a natural credibility region
+at level $\rho \in (0,1)$ is the ellipsoid
+\begin{equation*}
+\mathcal E(\mu,\Sigma,r(\rho))
+:=
+\left\{
+\theta \in \mathbb R^d :
+(\theta-\mu)^\top \Sigma^{-1} (\theta-\mu) \le r(\rho)
+\right\},
+\end{equation*}
+where $r(\rho)$ is the $\rho$-quantile of the $\chi^2_d$ distribution. The volume of
+$\mathcal E(\mu,\Sigma,r(\rho))$ is proportional to $\det(\Sigma)^{1/2}$, so determinant-based
+dispersion measures admit a direct geometric interpretation as proxies for the size of the
+remaining uncertainty ellipsoid. 
+---------------------------- or 
+Proposition \ref{prop:gaussian_ellipsoid} shows that determinant-based criteria
+admit a direct geometric interpretation: for a Gaussian belief state, shrinking
+$\det(\Sigma)$ is equivalent to shrinking the volume of the associated credibility
+ellipsoid \cite{anderson1984} 
+
+\section{Optimal Design}
+- Derror
+For a Gaussian belief
+state with mean $\mu$ and covariance $\Sigma$, a confidence or credibility
+ellipsoid has the form
+\begin{equation*}
+E(\mu,\Sigma,r)
+=
+\bigl\{
+\theta\in\mathbb R^d:
+(\theta-\mu)^\top \Sigma^{-1}(\theta-\mu)\le r
+\bigr\},
+\end{equation*}
+and its volume is proportional to $\det(\Sigma)^{1/2}$. Thus determinant-based
+criteria can be interpreted geometrically as aiming to shrink the volume of the
+remaining uncertainty ellipsoid as quickly as possible.
+\section{Numerics}
+policy
+adaptive policy
+D-efficiency : , for example,\ a determinant-based measure of dispersion such as $\det(\Sigma)^{1/n}$ (proportional to ellipsoid volume)
+surrogate?
+preference elicitation?
+\section{Submodularity}
+Submodularity is an idea often used for guarantees, which we will also use in a later chapter.
+- Submodularity
+- Adaptive Submodularity
+We will use the following guarantee for our algorithm:
+- Krause guarantee
+- Myopic
+- Matroid
+
+\begin{definition}{Adaptive policy.}
+An adaptive policy is a sequence of decision rules
+\begin{equation*}
+\pi = (\pi_0,\pi_1,\dots,\pi_{T-1}),
+\end{equation*}
+where each decision is a function of the current posterior belief.
+\end{definition}
+\newpage
+\chapter{Questions as Observations of the Latent State}\label{chapter:IRT}
+When a new user arrives on a digital platform, the system must quickly infer enough about them to support personalization.  In a clinician-led
+setting, this inference can rely on a structured interview or a lengthy assessment
+administered by trained personnel. In an online setting, each additional question takes effort from the user and may increase the risk of disengagement. We therefore model onboarding as an inference
+problem under partial information: each user is characterized by a fixed but unobserved
+latent state $\theta \in \mathbb{R}^n$, whose components encode multiple hidden traits
+reflecting the user’s specific needs and preferences. The platform cannot observe
+$\theta$ directly. Instead, it learns about $\theta$ from the user’s responses to
+questions.
+
+To connect questionnaire responses to the latent state, we use item response theory
+(IRT). Broadly speaking, IRT refers to a family of psychometric models that describe how the probability of a given response is determined by an
+underlying, unobserved variable. In our setting, it provides the probabilistic link
+between the user’s latent state and the answers they give. For a detailed introduction to item response theory, see Hambleton, Swaminathan, and Rogers \cite{hambletonSwaminathanRogers1991irt} and Edelen and Reeve \cite{edelenReeve2007irt}.
+
+We first introduce a general model linking observed responses to the user's unobserved state. We then specialize this framework to answer choices with a natural order and finally derive a geometric interpretation used in next chapter.
+
+\section{Latent State and Question Scores}\label{sec:var}
+\input{fig_aq}
+Let the question bank $\mathcal{Q}$ be a finite collection of questions\footnote{In the IRT literature, questions are referred to as items.} available to
+the platform. Throughout, we consider a fixed user and suppress the user
+index. We now formalize the latent score model underlying our treatment of questionnaire responses.
+
+\begin{definition}[Multidimensional latent score model]\label{def:latvar}
+   Let $\theta = (\theta_1,\dots,\theta_n)^\top \in \mathbb{R}^n$ denote the latent
+state of a user, where $\theta_i$ is the $i$th latent trait.\footnote{We use \say{latent state} rather than the IRT convention of \say{latent trait} to emphasize that $\theta$
+encodes multiple traits simultaneously.} The model associates with each question $q$
+an unobserved latent score
+ \begin{equation*}
+     Z_q = a_q^\top \theta + \varepsilon_q, \qquad \varepsilon_q \sim \mathcal{N}(0, 1), 
+ \end{equation*}
+where \(a_q \in \mathbb{R}^n\) is a question-specific discrimination vector and
+\(\varepsilon_q\) is observation noise. We assume that the noise terms
+\(\{\varepsilon_q\}_{q\in\mathcal Q}\) are mutually independent and independent of
+\(\theta\).
+
+
+\end{definition}
+
+The score \(Z_q\) represents the signal generated by question \(q\) for a user with
+latent state \(\theta\). In our setting, $\theta$ summarizes multiple latent traits relevant to onboarding, for example, anxiety severity, depressive symptoms, and content preferences.
+The vector $a_q$ determines how question $q$ depends on the latent state. Its
+direction identifies the combination of latent traits that the question probes,
+whereas its magnitude determines how strongly the latent score changes in that
+direction. Questions with nearly parallel vectors therefore probe similar aspects
+of the latent state, while larger $\|a_q\|$ corresponds to a stronger
+dependence on movement along that direction.
+The noise term
+\(\varepsilon_q\) captures variation not explained by the latent state, such as measurement noise, temporary mood,
+inattention, hesitation, or imperfect self-report.
+
+
+We next connect the latent score \(Z_q\) to the observed answer.
+
+
+\section{Ordered Response Categories and the Graded Response Model}\label{sec:grm}
+
+In psychological
+assessments, questions have ordered response categories: a user typically reports how
+frequently they experience a symptom on a scale ranging from \say{not at all} to
+\say{nearly every day}.  These categories have a natural order, but the gaps between
+them are not of equal distance. The graded response model (GRM) proposed by Samejima \cite{Samejima1997} handles this through an observation rule based on ordered thresholds.
+
+
+
+
+
+\begin{definition}[Response space and thresholds]
+\label{def:response_space_thresholds}
+For each question $q \in \mathcal Q$, let $m_q \ge 1$ and define the response space
+\begin{equation*}
+\mathcal Y_q := \{0,1,\dots,m_q\}.
+\label{eq:response_space}
+\end{equation*}
+Let
+\begin{equation*}
+-\infty =: \tau_{q,0} < \tau_{q,1} < \cdots < \tau_{q,m_q} < \tau_{q,m_q+1} := +\infty
+\label{eq:threshold_sequence}
+\end{equation*}
+be an ordered sequence of thresholds. These thresholds partition the real line into
+$m_q+1$ intervals, one for each response category.
+\end{definition}
+\input{fig_categories}
+\begin{definition}[Graded response model]
+\label{def:grm}
+Under the graded response model, the observed response $Y_q \in \mathcal Y_q$ is
+obtained by thresholding the latent score $Z_q$ from
+Definition~\ref{def:latvar}:
+\begin{equation*}
+Y_q = r
+\quad \Longleftrightarrow \quad
+\tau_{q,r} \le Z_q < \tau_{q,r+1}.
+\label{eq:grm_threshold_rule}
+\end{equation*}
+Equivalently, the response probability of category $r$ is
+\begin{equation*}
+\mathbb P(Y_q = r \mid \theta)
+=
+\Phi(\tau_{q,r+1} - a_q^\top \theta)
+-
+\Phi(\tau_{q,r} - a_q^\top \theta),
+\qquad r \in \mathcal Y_q,
+\label{eq:grm_category_likelihood}
+\end{equation*}
+where $\Phi$ denotes the standard normal cumulative distribution function.\footnote{In the IRT literature, both logistic-link and probit-link versions are common.
+We use the probit version induced by Gaussian noise throughout.}
+\end{definition}
+
+Thus, for each category $r \in \mathcal Y_q$, the GRM assigns a probability
+$\mathbb P(Y_q = r \mid \theta)$, describing how likely a user with latent
+state $\theta$ is to select category $r$ on question $q$.
+
+
+It is often convenient to express the model through cumulative response probabilities.
+For $r = 1,\dots,m_q$,
+\begin{equation*}
+\mathbb P(Y_q \ge r \mid \theta)
+=
+\Phi(a_q^\top \theta - \tau_{q,r}),
+\label{eq:grm_cumulative}
+\end{equation*}
+with boundary conventions
+\begin{equation}
+\mathbb P(Y_q \ge 0 \mid \theta) = 1,
+\qquad
+\mathbb P(Y_q \ge m_q+1 \mid \theta) = 0.
+\label{eq:grm_boundary_conventions}
+\end{equation}
+
+The category probabilities follow directly by differencing adjacent terms:
+\begin{equation}
+\mathbb P(Y_q = r \mid \theta)
+=
+\mathbb P(Y_q \ge r \mid \theta)
+-
+\mathbb P(Y_q \ge r+1 \mid \theta).
+\label{eq:grm_differencing}
+\end{equation}
+
+
+Two structural features of the model will be important for the inference layer:
+\begin{itemize}
+    \item \textbf{One-dimensional dependence:}
+the response likelihood depends on $\theta$ only through the scalar projection
+$a_q^\top \theta$. Thus, even though the latent state is $n$-dimensional, each question acts on it through a one-dimensional score.
+\item \textbf{Conditional independence:}
+since each observed response $Y_q$ is determined by the corresponding latent score
+$Z_q$, the independence assumptions in Definition~\ref{def:latvar} imply that the
+observed responses are conditionally independent given $\theta$. Thus, for any
+questions $q_1,\dots,q_k \in \mathcal Q$,
+\begin{equation}
+p(y_{q_1},\dots,y_{q_k}\mid \theta)
+=
+\prod_{\ell=1}^k p(y_{q_\ell}\mid \theta).
+\label{eq:conditional_independence_responses}
+\end{equation}
+All cross-question dependence is captured through the common latent state $\theta$.
+\end{itemize}
+
+
+
+\begin{remark}[Binary special case]\label{rem:binary}
+    Binary responses arise as the special case $m_q = 1$. Then question $q$ has a
+single threshold $\tau_{q,1}$ and two response categories, with probabilities
+\begin{equation*}
+\mathbb P(Y_q = 0 \mid \theta) = \Phi(\tau_{q,1} - a_q^\top \theta),
+\qquad
+\mathbb P(Y_q = 1 \mid \theta) = \Phi(a_q^\top \theta - \tau_{q,1}).
+\label{eq:grm_binary_special_case}
+\end{equation*}
+If the two categories are, for example, \say{no} and \say{yes}, then $\tau_{q,1}$
+acts as the probabilistic cutoff separating latent-score values for which \say{no}
+is more likely from those for which \say{yes} is more likely. A larger threshold
+shifts this cutoff to higher values of $a_q^\top \theta$, so the upper response
+becomes harder to attain. In this sense, $\tau_{q,1}$ plays the role of a difficulty
+parameter. Geometrically, the binary case has a single category boundary orthogonal
+to $a_q$, whereas the graded response model places multiple ordered boundaries
+orthogonal to the same direction.
+\end{remark}
+
+In practice, the parameters $(a_q,\tau_{q,1},\dots,\tau_{q,m_q})$ are estimated offline from historical response data using standard calibration methods for graded response models. These include iterative procedures such as expectation--maximization or Newton--Raphson \cite{bockAitkin1981,hambletonSwaminathanRogers1991irt}.
+
+\section{Geometric Interpretation of Responses}\label{sec:geo}
+
+The GRM admits a natural geometric interpretation in the latent space. For each
+question $q \in \mathcal Q$ and threshold index $r = 1,\dots,m_q$, the set
+\begin{equation}
+\{\theta \in \mathbb R^n : a_q^\top \theta = \tau_{q,r}\}
+\label{eq:threshold_hyperplane}
+\end{equation}
+defines a hyperplane in $\mathbb R^n$ with normal vector $a_q$. For fixed $q$, the
+thresholds $\tau_{q,1},\dots,\tau_{q,m_q}$ therefore define a family of parallel
+hyperplanes.
+
+These hyperplanes arise directly from the cumulative form of the GRM. By
+\eqref{eq:grm_cumulative},
+\[
+\mathbb P(Y_q \ge r \mid \theta) = \Phi(a_q^\top \theta - \tau_{q,r}).
+\]
+Hence
+\begin{equation*}
+\mathbb P(Y_q \ge r \mid \theta) = \tfrac{1}{2}
+\quad \Longleftrightarrow \quad
+a_q^\top \theta = \tau_{q,r}.
+\label{eq:cumulative_half_probability}
+\end{equation*}
+Equation \eqref{eq:threshold_hyperplane} therefore describes the set of latent states at which
+\[
+P(Y_q \ge r \mid \theta)=\tfrac12,
+\]
+separating latent states for which category $r$ or higher is more likely from those
+for which a lower category is more likely.
+
+Two adjacent thresholds define the region
+\begin{equation*}
+\{\theta \in \mathbb R^n : \tau_{q,r} \le a_q^\top \theta < \tau_{q,r+1}\},
+\label{eq:slab_region}
+\end{equation*}
+which we can view as a slab between two consecutive threshold hyperplanes. In the noiseless
+case, observing response category $r$ would localize the latent state exactly to
+this slab. Once a noise term $\epsilon_q$ is included, an observed response no longer induces a
+hard constraint on the latent state. Nevertheless, the slab remains a natural geometric representation of the
+region associated with a given response category.
+
+The binary case, see Remark \ref{rem:binary}, is the simplest instance of this geometry. When
+$m_q=1$, a single threshold hyperplane divides the latent space into two halfspaces
+corresponding to the two response categories. This is the closest analogue to the
+halfspace-based response structures reviewed in the next chapter. For
+$m_q>1$, this single boundary is replaced by an ordered family of parallel threshold
+hyperplanes, so that responses categories correspond to slabs rather
+than halfspaces.
+
+If we again ignore the noise term, then after $k$ questions the
+observed responses induce the polyhedral set
+\begin{equation}
+\Theta_k
+:=
+\bigcap_{\ell=1}^k
+\left\{
+\theta \in \mathbb R^n :
+\tau_{q_\ell,r_{\ell}} \le a_{q_\ell}^\top \theta < \tau_{q_{\ell},r_{\ell+1}}
+\right\}.
+\label{eq:slabs}
+\end{equation}
+
+In this idealized geometric view, each additional response further narrows down the
+user's latent state by intersecting the current feasible region with another slab.
+
+This slab interpretation provides the geometric bridge to the polyhedral and
+ellipsoidal methods discussed next.
+
+\chapter{OLD IRT}\label{chapter:IRT}
+
+ 
+“questions” can be questions, exercises, or prompts. A practical advantage of IRT-based design is that it can improve measurement accuracy and reliability while reducing the time and effort of assessment \cite{edelenReeve2007irt}, enabling settings such as computerized adaptive testing (CAT), where questions are selected sequentially based on previous responses to estimate a latent trait efficiently \cite{CAT1,CAT2}.\\
+IRT differentiates between dichotomous and polytomous questions, where dichotomous questions feature only two possible response categories (e.g. Yes/No, True/False, etc.), while the latter offers two or more ordered or unordered categories (e.g. Strongly Disagree to Strongly Agree). Questions with answers in ordered categories are called ordinal. \sge{it would be good to mention what we care about in this work.}\\
+
+
+\input{fig_IRT_simple}
+\input{fig_GRM1}
+\input{fig_GRM2}
+
+
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\linewidth]{fig1_ordinal_slab.pdf}
+    \caption{ Geometric interpretation of an ordinal response. In a two-dimensional latent space, the category boundaries $a_q^\top\theta=\tau_{i,r} $are parallel lines orthogonal to the discrimination vector $a_q$. Observing response category $r$ localizes the latent state to the slab between two adjacent boundaries}
+    \label{fig:a_response}
+\end{figure}
+\begin{figure}
+    \centering
+    \includegraphics[width=0.9\linewidth]{fig2_slab_intersection.pdf}
+    \caption{ Accumulation of ordinal responses. Each answer restricts the latent state to a slab. After multiple questions, the feasible set is the intersection of these slabs, producing a polyhedral region that concentrates around the user’s latent state.}
+    \label{fig:3_responses}
+\end{figure}
+
+\newpage
+\chapter{Choice-Based Conjoint Analysis}\label{chapter:CBC}
+The preceding chapter showed that ordinal questionnaire responses admit a natural
+geometric interpretation: each answer localizes the latent state of the user to a slab
+between parallel threshold hyperplanes. Before introducing our own inference and
+question-selection method, we briefly review a line of work from adaptive
+choice-based conjoint analysis that studies a structurally similar problem.
+
+Choice-based conjoint analysis is a survey-based method of market research aimed at inferring how respondents\footnote{In the CBC literature, the decision maker is typically called a respondent.
+We retain that terminology in this chapter, since it refers to survey-based choice
+experiments rather than platform users.} value product attributes from observed choices.
+In its adaptive form, the system learns an individual respondent's latent
+preference vector from a sequence of queries, while selecting each new query based on the responses observed so far. Although the application domain differs
+from ours, the setting parallels ours. In both, the
+system seeks to learn an unobserved latent vector from partial response
+information, and question selection serves to reduce uncertainty as efficiently as
+possible.
+
+In particular, this literature gives rise to two influential frameworks. The first
+is a polyhedral view, in which responses induce feasible regions in the latent
+space, echoing the slab view discussed previously. This perspective was later extended to an ellipsoidal framework, in which
+uncertainty is represented by approximate Gaussian belief states updated in a
+Bayesian fashion. Together, these ideas provide the closest methodological bridge
+to the Gaussian inference layer and adaptive question-selection rules developed in
+the following chapters.
+
+\section{Polyhedral Methods}
+
+Among the earliest adaptive approaches are the polyhedral methods introduced by
+Toubia, Hauser, and Simester \cite{poly}. 
+
+In adaptive CBC, a product is represented
+by an attribute vector \(x\), called a \emph{profile}. A respondent's latent
+preferences are summarized by a vector \(\beta\), called the \emph{partworth
+vector}, whose entries quantify the value the respondent assigns to different
+product attributes. The
+utility assigned to a profile \(x\) is the weighted sum of its attributes
+\[
+U(x)=\beta^\top x.
+\]
+An observed choice is then interpreted as a comparison between the utilities
+of the profiles presented in a query.
+In the noiseless case, if profile \(x\) is chosen over profile \(y\), then
+\begin{equation}
+    \beta^\top x \ge \beta^\top y,
+\end{equation}
+which is equivalent to a linear inequality on the unknown partworth vector. After
+several queries, the set of partworth vectors consistent with the observed answers
+is given by a polyhedron. Adaptive query
+construction is then becomes choosing the next comparison so that this
+feasibility polyhedron shrinks as rapidly as possible.
+
+The appeal of the polyhedral method lies in its simplicity. t represents
+uncertainty directly through the size and shape of the feasible polyhedral region, leading to practical heuristics for
+constructing the next comparison query. The authors emphasize the guiding
+ideas of \emph{choice balance}, favoring queries whose possible answers split the current feasible region into parts of similar size, and \emph{post-choice symmetry}, which favors queries that probe directions of greatest
+uncertainty.
+
+The main limitation of this approach is its treatment of responses as
+error-free. Because each answer is treated as a hard constraint, allowing a single mistake
+to exclude the true latent preference vector from the feasible region and thereby
+distort all subsequent updates.
+
+\section{Probabilistic Polyhedral Extensions}
+To address this issue, Toubia, Hauser, and Garcia \cite{probpoly} introduce a
+probabilistic polyhedral framework. In this setting, an observed response provides
+noisy evidence about which side of a comparison hyperplane the respondent's latent
+preference vector is more likely to lie in.  The posterior distribution shifts probability mass toward latent-space regions where the observed answer is more likely and away from regions where it is less likely. Thus, a response consistent with one side of a comparison hyperplane
+does not eliminate the opposite side---it only makes it less probable. This
+extension also allows prior information about the partworth vector to be
+incorporated naturally.
+
+The resulting model preserves the geometric intuition of the original polyhedral
+approach, but at a computational cost. Successive responses no longer yield a single feasible polyhedron but instead induce a posterior distribution over an increasingly complex mixture of polyhedral regions. 
+As Saur\'e and Vielma emphasize in their review of this literature, the computation
+time of both question selection and Bayesian updating then scales unfavorably with
+the number of questions, which limits the practical applicability of the
+probabilistic polyhedral method.
+
+Subsequent work underscores both the appeal and the difficulty of this
+probabilistic polyhedral viewpoint. Several later approaches pursued related goals
+from different angles. Bertsimas and O'Hair \cite{bertsimas2013learning} proposed
+a robust-optimization extension of the polyhedral framework, while Abernethy et
+al.\ \cite{abernethy2008eliciting} developed a statistically motivated adaptation
+inspired by the same geometric ideas. In parallel, Yu, Goos, and Vandebroek
+\cite{yu2011individually} formulated a full Bayesian adaptive approach based on
+expected D-error reduction, and Crabbe, Akinc, and Vandebroek
+\cite{crabbe2014fast} pursued a similar direction using entropy minimization.
+These methods, however, again required posterior computations and query selection
+procedures that became impractical.
+
+\section{Ellipsoidal Methods}
+
+Saur\'e and Vielma \cite{ellipsoidal} address this gap through the
+ellipsoidal method. In addition to retaining the geometric interpretation of the
+polyhedral line, their approach replaces its fragile and computationally burdensome
+posterior representation by a more tractable approximation. In particular, their
+method accommodates response error through approximate Bayesian updating, making
+real-time computation feasible.
+
+Central to their method is representing the posterior
+distribution of a respondent's latent preference vector as a multivariate normal approximation. Even with a
+normal prior, the exact posterior after an observed response is no longer normal in
+closed form. The authors therefore replace the exact posterior after each
+response by a normal distribution with matching first two moments. This yields a
+compact recursive representation of the current belief, summarized by
+an updated mean vector and covariance matrix. Within this approximation, the
+covariance matrix captures the remaining uncertainty and determines an associated
+credibility ellipsoid. Query selection is then guided by a determinant-based
+dispersion criterion, such as the D-error.
+
+
+Computationally, the ellipsoidal method benefits from the fact that each response
+enters the posterior only through the comparison between the two profiles in the
+query. The resulting posterior moments therefore reduce to a one-dimensional
+integration problem rather than a full high-dimensional one. This makes the
+Gaussian approximation tractable and is one of the main features that connects the
+ellipsoidal method to our own approach.
+
+
+One important
+difference from our setting lies in the action space. In adaptive CBC, the method
+typically constructs the next query by choosing which product profiles to present. In our setting, by contrast, the system
+selects the next question from a fixed bank of available questions.  Query selection in CBC therefore
+remains a combinatorial design problem even after the posterior has been
+approximated by a normal distribution. Saur\'e and Vielma address this by
+approximating the resulting objective and casting query construction as a
+mixed-integer optimization problem.
+
+A closely related idea also appears in multidimensional psychometric models. In
+computerized adaptive testing, questions are often chosen to maximize how much they
+reduce uncertainty about the latent trait estimate. In the CBC literature reviewed
+here, uncertainty is instead tracked through the posterior covariance matrix. Under
+a local Gaussian approximation, these are two views of the same geometric
+principle: a more informative question leads to a smaller uncertainty ellipsoid.
+This connection is particularly natural in our setting, since each ordinal question
+depends on the latent state only through the scalar projection \(a_q^\top\theta\).
+As a result, a single question is informative mainly along the direction selected
+by its discrimination vector. In the chapters that follow, we combine this
+directional observation geometry with a Gaussian approximation of posterior
+uncertainty.
+
+
+\newpage
+\chapter[A Gaussian Inference Layer for Ordinal Questionnaires]{A Gaussian Inference Layer for Ordinal Questionnaires}\label{chapter:approach}
+
+The preceding chapters established the two building blocks underlying our method.
+Section~\ref{chapter:IRT} showed that, after fitting a multidimensional graded response model
+to historical response data, each question $i$ is characterized by a discrimination vector
+$a_q\in\mathbb R^n$ and an ordered set of thresholds
+\begin{equation*}
+   -\infty=\tau_{i,0}<\tau_{i,1}<\cdots<\tau_{i,m_i}<\tau_{i,m_i+1}=+\infty. 
+\end{equation*}
+Geometrically, an ordinal response localizes the user’s latent state to a slab between two
+parallel hyperplanes orthogonal to $a_q$. Section~\ref{chapter:CBC} then showed how the
+ellipsoidal method of Saur\'e and Vielma handles noisy geometric observations by maintaining
+a Gaussian belief state $(\mu_k,\Sigma_k)$ and updating it through moment matching. In this
+chapter, we combine these two ideas into a recursive Gaussian inference layer for ordinal
+questionnaires.
+
+We consider the sequential inference problem for a fixed user $u$. The goal is to infer the
+ latent state of that user $\theta_u\in\mathbb R^n$ from a sequence of adaptively selected question
+responses. We assume that $\theta_u$ remains fixed during the questionnaire. To reduce
+notational clutter, we suppress the user index where no ambiguity arises and write 
+\begin{equation*}
+\theta := \theta_u .
+\end{equation*}
+Following the psychometric terminology introduced in Chapter \ref{chapter:CBC}, we use the term \emph{question} for an element of the
+questionnaire bank. In the onboarding application, questions correspond to the questions posed
+to the user.
+\section{Model Setup}
+
+Before any user-specific responses are observed, our uncertainty about the latent state is
+described by a Gaussian prior
+\begin{equation*}
+p_0(\theta)=\mathcal N(\mu_0,\Sigma_0),
+\end{equation*}
+where $\mu_0\in\mathbb R^n$ is the prior mean and $\Sigma_0\in\mathbb R^{d\times d}$ is
+positive definite.
+
+Let $Q$ denote the finite question bank. Each question $i\in Q$ is associated with a
+discrimination vector $a_q\in\mathbb R^n$, thresholds
+\begin{equation*}
+-\infty=\tau_{i,0}<\tau_{i,1}<\cdots<\tau_{i,m_i}<\tau_{i,m_i+1}=+\infty,
+\end{equation*}
+and a response space
+\begin{equation*}
+\mathcal Y_i:=\{0,1,\dots,m_i\}.
+\end{equation*}
+For the sequential inference model, we work with the latent-Gaussian threshold representation
+\begin{equation*}
+Z_i=a_q^\top\theta+\varepsilon_i,
+\qquad
+\varepsilon_i\sim\mathcal N(0,1),
+\end{equation*}
+together with the threshold rule
+\begin{equation*}
+Y_i=r
+\iff
+\tau_{i,r}\le Z_i<\tau_{i,r+1}.
+\end{equation*}
+Then the likelihood of a certain response $r$ becomes
+\begin{equation*}
+\mathbb P(Y_i=r\mid \theta,i)
+=
+\mathbb P\!\left(\tau_{i,r}\le a_q^\top\theta+\varepsilon_i<\tau_{i,r+1}\right).
+\end{equation*}
+The Gaussian noise assumption is what makes the moment-matching update in Proposition \ref{prop:rank_one_update} exact in a single step.
+We will use this latent-variable formulation throughout the inference layer \cite{albert1993bayesian}. 
+
+At step $k$, the algorithm selects an question $i_k\in Q$ to present to the user and observes a response
+\begin{equation*}
+y_k\in\mathcal Y_{i_k}.
+\end{equation*}
+Let $H_k$ denote the observed history after $k$ responses, with
+\begin{equation*}
+H_k=(i_0,y_0,\dots,i_{k-1},y_{k-1}) \quad \text{and}\quad H_0 := \emptyset.
+\end{equation*}
+At step $k$, the next question $i_k$ is selected based on $H_k$, after which a response $y_k$ is observed and the history is extended to 
+\begin{equation}
+    H_{k+1} = (H_k, i_k, y_k)
+\end{equation}
+
+For any realized history $H_k$, we denote the posterior belief over the latent state by
+\[
+p_k(\theta) := p(\theta \mid H_k).
+\]
+By Bayes' rule and conditional independence of the responses given $\theta$,
+\[
+p_k(\theta)
+\propto
+p_0(\theta)\prod_{s=0}^{k-1} p(y_s \mid \theta, i_s).
+\]
+After selecting question $i_k$ and observing response $y_k$, the history is updated to
+\begin{equation*}
+H_{k+1}=(H_k,i_k,y_k),
+\end{equation*}
+and the exact posterior recursion becomes
+\begin{equation}\label{eq:posterior}
+p_{k+1}(\theta)
+=
+p(\theta\mid H_{k+1})
+\propto
+p(y_k\mid \theta,i_k)\,p_k(\theta).
+\end{equation}
+
+Hence, all information gathered up to step $k$ is summarized by the current posterior
+distribution $p_k$.
+
+
+\section{Bayesian Belief Updates}\label{sec:bayesian_belief_updates}
+The posterior recursion \eqref{eq:posterior} is exact. However, under the ordinal response
+likelihood, the posterior distribution is generally no longer Gaussian after the first update.
+\textcolor{blue}{OR: The same challenge that motivated Saur\'e and Vielma's ellipsoidal method in Section 6.2 arises here: even with a Gaussian prior, the posterior distribution is generally no longer Gaussian after the first update.}
+
+Nevertheless, conditional on the current Gaussian belief, its first two moments after a single
+response can still be characterized exactly through a one-dimensional projection of the latent
+state. This makes the later Gaussian approximation tractable.
+
+Suppose the current belief after $k$ observed responses is Gaussian,
+\begin{equation*}
+\theta \mid H_k \sim \mathcal N(\mu_k,\Sigma_k),
+\end{equation*}
+and let question $i\in Q$ be administered at round $k$. Since the response model for question $i$
+depends on $\theta$ only through the scalar projection $a_q^\top\theta$, as discussed in Section \ref{sec:grm}, it is natural to define the
+standardized queried coordinate
+\begin{equation*}
+U_{k,i}
+:=
+\frac{a_q^\top(\theta-\mu_k)}{\sqrt{a_q^\top\Sigma_k a_q}}.
+\end{equation*}
+The one-step posterior update then reduces to conditional moments of $U_{k,i}$, given the
+observed category.
+
+\begin{prop}[Exact one-step posterior moments]\label{prop:rank_one_update}
+Let
+\begin{equation*}
+\theta \mid H_k \sim \mathcal N(\mu_k,\Sigma_k),
+\end{equation*}
+with $\Sigma_k$ positive definite, and let $a_q\in\mathbb R^n$ be the discrimination vector of
+question $i$. Define
+\begin{equation*}
+U_{k,i}
+:=
+\frac{a_q^\top(\theta-\mu_k)}{\sqrt{a_q^\top\Sigma_k a_q}}.
+\end{equation*}
+Assume that, conditional on the current history $H_k$, the response event $\{Y_i=r\}$
+depends on $\theta$ only through $U_{k,i}$ and an auxiliary noise variable $\varepsilon_i$
+that is independent of $\theta$.
+
+Let
+\begin{equation*}
+m_{k}^{(i,r)}:=\mathbb E[U_{k,i}\mid H_k,i,Y_i=r],
+\qquad
+v_{k}^{(i,r)}:=\operatorname{Var}(U_{k,i}\mid H_k,i,Y_i=r).
+\end{equation*}
+Then the exact posterior mean and covariance after administering question $i$ at step $k$ and
+observing category $r$ are
+\begin{equation}\label{eq:mu_update}
+\mu_{k+1}^{(i,r)}
+:=
+\mathbb E[\theta\mid H_k,i,Y_i=r]
+=
+\mu_k+
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,m_{k}^{(i,r)}, 
+\end{equation}
+
+
+and
+\begin{equation}\label{eq:sigma_update}
+\Sigma_{k+1}^{(i,r)}
+:=
+\operatorname{Cov}(\theta\mid H_k,i,Y_i=r)
+=
+\Sigma_k+
+(v_{k}^{(i,r)}-1)\,
+\frac{\Sigma_k a_q a_q^\top \Sigma_k}{a_q^\top\Sigma_k a_q}.    
+\end{equation}
+
+
+In particular, the covariance update is rank one and modifies uncertainty only in the direction
+$\Sigma_k a_q$.
+\end{prop}  \textcolor{blue}{Should this proof be moved to the appendix? Should I just give a proof sketch?}
+
+\begin{proof}
+Define the residual
+\begin{equation*}
+\xi_{k,i}
+:=
+\theta-\mu_k-\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,U_{k,i}.
+\end{equation*}
+Conditional on $H_k$, both $U_{k,i}$ and $\xi_{k,i}$ are Gaussian, since they are affine
+functions of the Gaussian random vector $\theta\mid H_k$. Hence it suffices to show that they
+are uncorrelated conditional on $H_k$.
+
+By construction,
+\begin{equation*}
+U_{k,i}
+=
+\frac{a_q^\top(\theta-\mu_k)}{\sqrt{a_q^\top\Sigma_k a_q}},
+\end{equation*}
+so
+\begin{equation*}
+\operatorname{Var}(U_{k,i}\mid H_k)
+=
+\frac{a_q^\top\Sigma_k a_q}{a_q^\top\Sigma_k a_q}
+=1,
+\end{equation*}
+and
+\begin{equation*}
+\operatorname{Cov}(\theta,U_{k,i}\mid H_k)
+=
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}.
+\end{equation*}
+Therefore
+\begin{equation*}
+\operatorname{Cov}(\xi_{k,i},U_{k,i}\mid H_k)
+=
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}
+-
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}
+\operatorname{Var}(U_{k,i}\mid H_k)
+=0.
+\end{equation*}
+Thus $U_{k,i}$ and $\xi_{k,i}$ are independent conditional on $H_k$.
+
+Because $\varepsilon_i$ is independent of $\theta$, it is independent of both $U_{k,i}$ and
+$\xi_{k,i}$. Hence $\xi_{k,i}$ is independent of the pair $(U_{k,i},\varepsilon_i)$, and therefore
+also independent of the event $\{Y_i=r\}$ conditional on $H_k$. Consequently,
+\begin{equation*}
+\mathbb E[\xi_{k,i}\mid H_k,i,Y_i=r]=0,
+\qquad
+\operatorname{Cov}(\xi_{k,i}\mid H_k,i,Y_i=r)=\operatorname{Cov}(\xi_{k,i}\mid H_k).
+\end{equation*}
+
+Using the decomposition
+\begin{equation*}
+\theta
+=
+\mu_k
++
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,U_{k,i}
++
+\xi_{k,i},
+\end{equation*}
+we obtain
+\begin{equation*}
+\mathbb E[\theta\mid H_k,i,Y_i=r]
+=
+\mu_k+
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}
+\mathbb E[U_{k,i}\mid H_k,i,Y_i=r],
+\end{equation*}
+which yields
+\begin{equation*}
+\mu_{k+1}^{(i,r)}
+=
+\mu_k+
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,m_{k}^{(i,r)}.
+\end{equation*}
+
+Similarly,
+\begin{equation*}
+\operatorname{Cov}(\theta\mid H_k,i,Y_i=r)
+=
+\operatorname{Cov}\!\left(
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,U_{k,i}
++\xi_{k,i}
+\;\middle|\;H_k,i,Y_i=r
+\right).
+\end{equation*}
+Since $\xi_{k,i}$ is independent of both $U_{k,i}$ and the response event conditional on $H_k$,
+this becomes
+\begin{equation*}
+\operatorname{Cov}(\theta\mid H_k,i,Y_i=r)
+=
+\frac{\Sigma_k a_q a_q^\top\Sigma_k}{a_q^\top\Sigma_k a_q}
+\operatorname{Var}(U_{k,i}\mid H_k,i,Y_i=r)
++
+\operatorname{Cov}(\xi_{k,i}\mid H_k).
+\end{equation*}
+Finally, by definition of $\xi_{k,i}$,
+\begin{equation*}
+\operatorname{Cov}(\xi_{k,i}\mid H_k)
+=
+\Sigma_k-
+\frac{\Sigma_k a_q a_q^\top\Sigma_k}{a_q^\top\Sigma_k a_q}.
+\end{equation*}
+Substituting gives
+\begin{equation*}
+\Sigma_{k+1}^{(i,r)}
+=
+\Sigma_k+
+(v_{k}^{(i,r)}-1)\,
+\frac{\Sigma_k a_q a_q^\top\Sigma_k}{a_q^\top\Sigma_k a_q}.
+\end{equation*}
+\end{proof}
+\begin{remark}[question-specific response noise]\label{rem:question_noise}
+The update formulas above are written for the baseline specification
+\begin{equation*}
+Z_i = a_q^\top \theta + \varepsilon_i,
+\qquad
+\varepsilon_i \sim \mathcal N(0,1).
+\end{equation*}
+A natural generalization is to allow question-specific noise variances
+\begin{equation*}
+\varepsilon_i \sim \mathcal N(0,\sigma_q^2),
+\end{equation*}
+with $\sigma_q^2$ depending on the question. Then the relevant predictive variance becomes
+\begin{equation*}
+a_q^\top \Sigma_k a_q + \sigma_q^2,
+\end{equation*}
+so larger $\sigma_q^2$ weakens the posterior contraction produced by observing question $i$.
+The geometric direction of the update is unchanged, but noisier questions are less informative.
+\end{remark}
+
+The rank-one moment matching update preserves positive definiteness.  A short proof is given in Appendix \ref{appendix:posdef}. Therefore, every posterior
+covariance matrix $\Sigma_k$ remains positive definite, and hence invertible.
+Proposition~\ref{prop:rank_one_update} is an \emph{exact} moment statement: no Gaussian
+approximation has yet been made. In the ordinal-probit model considered here, the coefficients $m_{k}^{(i,r)}$ and $v_{k}^{(i,r)}$
+can be computed exactly from one-dimensional truncated normal moments.
+
+
+To state the formulas compactly, we standardize the latent score and express the observed
+category as an interval truncation.
+
+\begin{corollary}[Closed-form coefficients in the ordinal-probit model]
+\label{cor:ordinal_coeffs}
+
+Let $\Phi$ and $\phi$ denote the standard normal cumulative distribution function and probability
+density function, and let
+\begin{equation*}
+s_{k,i}^2 := a_q^\top \Sigma_k a_q,
+\qquad
+\gamma_{k,i} := \sqrt{s_{k,i}^2+1},
+\qquad
+\rho_{k,i} := \frac{s_{k,i}}{\gamma_{k,i}}.
+\end{equation*}
+For a selected category $y_k = r$, define the standardized threshold bounds
+\begin{equation*}
+\alpha_k^{(i,r)} := \frac{\tau_{i,r} - a_q^\top \mu_k}{\gamma_{k,i}},
+\qquad
+\beta_k^{(i,r)} := \frac{\tau_{i,r+1} - a_q^\top \mu_k}{\gamma_{k,i}},
+\end{equation*}
+and let
+\begin{equation*}
+p_k^{(i,r)} := \Phi\!\left(\beta_k^{(i,r)}\right) - \Phi\!\left(\alpha_k^{(i,r)}\right).
+\end{equation*}
+Set
+\begin{align*}
+\lambda_k^{(i,r)} :=&\:
+\frac{\phi\!\left(\alpha_k^{(i,r)}\right) - \phi\!\left(\beta_k^{(i,r)}\right)}{p_k^{(i,r)}},\\
+\eta_k^{(i,r)} :=& \:
+1 + \frac{\alpha_k^{(i,r)} \phi\!\left(\alpha_k^{(i,r)}\right)
+- \beta_k^{(i,r)} \phi\!\left(\beta_k^{(i,r)}\right)}{p_k^{(i,r)}}
+- \left(\lambda_k^{(i,r)}\right)^2.
+\end{align*}
+Then
+\begin{equation*}
+m_k^{(i,r)} = \rho_{k,i}\,\lambda_k^{(i,r)},
+\qquad
+v_k^{(i,r)} = 1 - \rho_{k,i}^2 + \rho_{k,i}^2\,\eta_k^{(i,r)}.
+\end{equation*}
+\end{corollary}
+\begin{remark}
+It is useful to distinguish between two equivalent views of the ordinal-probit
+update. As a function of the latent state $\theta$, the likelihood of observing
+category $r$ for question $i$ is
+\[
+P(Y_i = r \mid \theta)
+=
+\Phi\!\bigl(\tau_{i,r+1} - a_i^\top \theta\bigr)
+-
+\Phi\!\bigl(\tau_{i,r} - a_i^\top \theta\bigr),
+\]
+so the response model is a smooth difference of Gaussian cumulative distribution
+functions rather than a hard indicator constraint in $\theta$-space.
+
+The truncated-normal representation arises only after introducing the latent
+Gaussian score
+\[
+Z_i = a_i^\top \theta + \varepsilon_i,
+\qquad
+\varepsilon_i \sim N(0,1),
+\]
+and conditioning on the observed category event
+\[
+Y_i = r
+\iff
+\tau_{i,r} \le Z_i < \tau_{i,r+1}.
+\]
+Conditional on the current Gaussian belief, this event becomes an interval
+truncation of a one-dimensional Gaussian variable. Consequently, the update
+coefficients $m_k^{(i,r)}$ and $v_k^{(i,r)}$ in Proposition~\ref{prop:rank_one_update}
+and Corollary~\ref{cor:ordinal_coeffs} are computed from truncated-normal moments
+of that scalar latent coordinate.
+
+Thus, the ordinal-probit likelihood is smooth in $\theta$, while the
+truncated-normal language enters through the latent-variable representation used
+to evaluate the exact one-step posterior moments.
+\end{remark}
+The bounds $\alpha_k^{(i,r)}$ and $\beta_k^{(i,r)}$ given here are the standardized category
+thresholds under the current belief, and $p_k^{(i,r)}$ is the corresponding predictive probability
+of response category $r$. The term $\lambda_k^{(i,r)}$ is the mean correction induced by
+truncation to that interval, while $\eta_k^{(i,r)}$ is the associated conditional variance factor of
+the truncated standard normal. Finally,
+\begin{equation*}
+\rho_{k,i}^2 = \frac{s_{k,i}^2}{s_{k,i}^2+1}
+\end{equation*}
+is the fraction of total variance in the observed score attributable to latent-state uncertainty
+rather than observation noise, and therefore governs how strongly the observation affects the
+posterior update. The full derivation is given as a proof in
+Appendix~\ref{appendix:truncated_normal_derivation}.
+
+\begin{remark}\label{rem:vle1}
+Since $\eta_k^{(i,r)}$ is the variance of a standard normal truncated to the interval
+$[\alpha_k^{(i,r)},\beta_k^{(i,r)})$,  the standard truncated-normal
+moment formulas imply
+\begin{equation*}
+0<\eta_k^{(i,r)}\le 1,
+\end{equation*}
+see, for example, Barr and Sherrill \cite{barr1999mean}. Consequently,
+\begin{equation*}
+0<v_k^{(i,r)}=1-\rho_{k,i}^2+\rho_{k,i}^2\eta_k^{(i,r)}\le 1.
+\end{equation*}
+A short proof is given in Appendix~\ref{appendix:truncated_variance_bound}.
+\end{remark}
+
+
+\section{Gaussian Projection of the Posterior}\label{sec:moments}
+
+Proposition~\ref{prop:rank_one_update} and Corollary~\ref{cor:ordinal_coeffs}
+give us the exact posterior mean and covariance after one ordinal response.
+To obtain
+a recursive Gaussian belief state, we project the exact
+posterior back onto the Gaussian family by matching its first two moments.
+Concretely, after asking question $i_k$ at step $k$ and observing response
+$Y_{i_k}=y_k$, we define
+\begin{equation*}
+\mu_{k+1}
+:=
+\mathbb E[\theta \mid H_k, i_k, Y_{i_k}=y_k],
+\qquad
+\Sigma_{k+1}
+:=
+\operatorname{Cov}(\theta \mid H_k, i_k, Y_{i_k}=y_k),
+\end{equation*}
+and approximate
+\begin{equation*}
+\theta \mid (H_k, i_k, Y_{i_k}=y_k)
+\approx
+\mathcal N(\mu_{k+1},\Sigma_{k+1}).
+\end{equation*}
+This step follows the moment-matching perspective of assumed-density filtering and
+expectation propagation, as developed by Minka
+in~\cite{minka2001thesis,minka2001ep}. After each exact non-Gaussian Bayesian
+update, the posterior is replaced by a tractable approximation from a chosen
+distributional family, here a Gaussian matched through its first two moments.
+In our setting, this approximation is especially natural because the one-step
+moments themselves are not approximated: Proposition~\ref{prop:posterior_moments}
+and Corollary~\ref{cor:ordinal_coeffs} provide them in closed form, so the
+approximation enters only through the replacement of the exact posterior shape by
+its Gaussian projection. Related sequential Gaussian-update viewpoints, such as
+those of Wilkinson, Chang, Solin, and Andersen, interpret such approximations as
+parameter updates with Kalman-like geometry~\cite{wilkinson2020state}.
+
+In our setting, this approximation is especially natural because the one-step
+moments themselves are not approximated. Proposition~\ref{prop:rank_one_update} reduces the
+update to a one-dimensional problem, and Corollary~\ref{cor:ordinal_coeffs}
+provides the corresponding coefficients in closed form. Thus, in the
+ Gaussian projection of this section, the approximation enters only
+through the replacement of the exact posterior shape by a Gaussian distribution
+with matching mean and covariance.
+
+\begin{remark}
+There is an approximation error in the recursive update that comes from
+replacing the exact non-Gaussian posterior by a Gaussian distribution with
+matching first two moments. Hence the update preserves the exact posterior mean
+and covariance, but it does not retain higher-order features of the exact
+posterior, such as skewness or tail asymmetry.
+\end{remark}
+
+Together, Proposition~1 and Corollary~1 yield a complete one-step inference rule for ordinal
+responses. After each answer, the exact posterior mean and covariance can be computed through
+one-dimensional truncated-normal moments, and the resulting non-Gaussian posterior is projected
+back onto the Gaussian family by moment matching. Hence, the belief state remains summarized
+by the state $(\mu_k,\Sigma_k)$.
+
+This completes the inference layer of our method. The remaining question is how to act on the current belief: given the posterior summary
+$(\mu_k,\Sigma_k)$, which question should be asked next? Section~8 addresses this question.
+
+
+\section{Response-adaptive damping variant}
+\label{sec:damped_gaussian_projection}
+
+In our application, the prior may reflect that most users are expected to have low
+stress or low depression. If a user gives a response indicating elevated distress,
+the belief state should move in that direction. At the same time, a single answer
+should not make the system overly confident about the user’s precise latent level.
+We therefore refine the Gaussian projection from
+Section~\ref{sec:moments} by adding a response-adaptive damping factor.
+
+This modification is inspired by the natural-gradient view of expectation propagation developed by So
+and Turner~\cite{so2024fearless}. Their work shows that moment-matching updates in
+expectation propagation can be interpreted as natural-gradient steps on a
+variational objective. This motivates the use of an explicit step size to moderate
+the Gaussian update. In their setting, this step size
+helps control the effect of noise from Monte Carlo simulations used to calculate moments. In our setting, the scalar moments
+are available in closed form from Corollary~\ref{cor:ordinal_coeffs}. We use the
+same step-size idea to damp the propagated update according to the predictive
+probability of the realized ordinal response under the current belief state. 
+
+Under the current Gaussian belief state $s_k=(\mu_k,\Sigma_k)$, item $i$
+induces a predictive distribution over its ordinal response categories. Let
+\[
+p_k^{(i,r)} := \mathbb{P}(Y_i=r \mid s_k)
+\]
+denote the predictive probability of category $r \in \mathcal Y_i$. We set the
+response-adaptive step size to
+\[
+\epsilon_k^{(i,r)} := p_k^{(i,r)}.
+\]
+Thus, the size of the propagated Gaussian update is tied directly to the predictive plausibility of the realized response. More plausible responses induce larger step sizes and therefore less damping, less plausible responses induce smaller step sizes and therefore more cautious updates. When the predictive mass is spread across several categories, no single response receives a near-full step, so all realized updates remain more cautious.
+
+Using the notation of Section~\ref{sec:bayesian_belief_updates}, let $m_k^{(i,r)}$ and
+$v_k^{(i,r)}$ denote the conditional mean and variance of the standardized
+one-dimensional latent coordinate associated with item $i$ and response category
+$r$. Along this coordinate, the prior is $N(0,1)$, whereas the undamped
+Gaussian projection is $N(m_k^{(i,r)},v_k^{(i,r)})$. We damp this scalar update
+by interpolating in natural parameters with step size $\epsilon_k^{(i,r)}$, see
+Appendix~\ref{app:natural_damping}, so
+that
+\[
+\bar{\lambda}_k^{(i,r)}
+=
+(1-\epsilon_k^{(i,r)})
++
+\epsilon_k^{(i,r)}\frac{1}{v_k^{(i,r)}},
+\qquad
+\bar{\eta}_k^{(i,r)}
+=
+\epsilon_k^{(i,r)}\frac{m_k^{(i,r)}}{v_k^{(i,r)}}.
+\]
+Converting back to moments gives
+\begin{align}
+\bar{m}_k^{(i,r)}
+&=
+\frac{\epsilon_k^{(i,r)}\, m_k^{(i,r)}}
+     {v_k^{(i,r)} + \epsilon_k^{(i,r)}\bigl(1-v_k^{(i,r)}\bigr)},
+\label{eq:damped_m}
+\\
+\bar{v}_k^{(i,r)}
+&=
+\frac{v_k^{(i,r)}}
+     {v_k^{(i,r)} + \epsilon_k^{(i,r)}\bigl(1-v_k^{(i,r)}\bigr)}.
+\label{eq:damped_v}
+\end{align}
+
+The damped Gaussian projection is therefore
+\begin{align}
+\bar{\mu}_{k+1}^{(i,r)}
+&=
+\mu_k
++
+\frac{\Sigma_k a_i}{\sqrt{a_i^\top\Sigma_k a_i}}\,
+\bar{m}_k^{(i,r)},
+\label{eq:damped_mu}
+\\
+\bar{\Sigma}_{k+1}^{(i,r)}
+&=
+\Sigma_k
++
+\bigl(\bar{v}_k^{(i,r)} - 1\bigr)
+\frac{\Sigma_k a_i a_i^\top \Sigma_k}{a_i^\top\Sigma_k a_i}.
+\label{eq:damped_sigma}
+\end{align}
+
+This variant keeps the same rank-one update structure as the undamped Gaussian
+projection. The observed response still moves the belief in the direction
+indicated by the data, but the size of the propagated update is reduced when the
+realized category had a low probability under the current belief.
+
+The damping acts only at the level of the propagated Gaussian approximation. The
+exact one-step posterior moments remain those of
+Proposition~\ref{prop:rank_one_update} and
+Corollary~\ref{cor:ordinal_coeffs}. Thus, the damped rule gives a robust variant
+of the Gaussian inference layer.
+
+We do not use this damped variant in the main theoretical development of
+Chapter \ref{chapter:8}. The guarantees there are stated for the undamped update and the
+associated offline benchmark. The damped rule may nevertheless be practically useful in settings with response noise or  misreporting.
+\textcolor{blue}{NOTE FOR SWATI: at this point, I have left this as an open extension. If the damped version performs significantly better than the non-damped step, I will change this and promote the damped step to the main mechanism. I currently leave it as an extension because the offline benchmark argument becomes less clean, the surrogate score no longer mirrors the offline increments.}
+\chapter{Sensitivity-aware Adaptive Question Selection under Engagement Risks}\label{chapter:8}
+
+In Chapter~\ref{chapter:approach}, we developed a tractable Gaussian update rule for the belief
+state after observing a response to a selected ordinal question. We now turn to the
+complementary problem of question selection.
+
+Adaptive Onboarding can be viewed as a sequential decision problem.
+At each step, the platform
+chooses the next question based on the current belief state, and the observed outcome
+determines the next state of the interaction.  Each
+additional answer may improve personalization by reducing uncertainty about the
+user's latent state. At the same time, in mental-health settings, questions differ not only in informativeness but also in their effect on
+engagement: some questions are more likely to cause dropout, especially when asked
+early. The value of a question therefore depends on both its expected uncertainty
+reduction and its probability of being answered.
+
+ In this chapter, we model this effect through a stay probability that depends on both the question $i$ and the current step $k$ of the interaction.  Solving the exact multi-step stochastic
+control problem is intractable in our setting, because it requires tracking the full
+future evolution of the posterior belief together with the continuation of the
+interaction. This motivates switching to a one-step look-ahead approximation. We evaluate candidate questions by their expected immediate reduction in posterior
+uncertainty under the current Gaussian belief state, weighted by the probability that
+the interaction continues. We first derive the exact myopic objective, then introduce
+a tractable surrogate that yields a greedy online policy, and finally connect this
+rule to a weighted offline benchmark with the same projected-variance structure.
+
+\section{Interaction model}\label{sec:interaction_model}
+
+We first define the interaction model under which we select a question.
+At step $k$, the current information state is the Gaussian belief
+\begin{equation*}
+s_k := (\mu_k,\Sigma_k),
+\end{equation*}
+where $\mu_k \in \mathbb{R}^n$ and $\Sigma_k \in \mathbb{R}^{n\times n}$
+denote the posterior mean and covariance obtained from the recursive updates of
+Section~\ref{sec:moments}. All information gathered from the responses observed
+so far, $H_k$, is summarized by the current belief state $s_k$.
+
+Let $Q$ denote the finite catalog of candidate questions and let
+\begin{equation*}
+A_{k-1} := \{i_1,\dots,i_{k-1}\}
+\end{equation*}
+denote the set of questions already queried before step $k$. To avoid repetition,
+the next question must satisfy
+\begin{equation*}
+i_k \in Q \setminus A_{k-1}.
+\end{equation*}
+
+If question $i$ is proposed at step $k$, the user remains engaged with probability
+\begin{equation*}
+p^{ \text{stay}}(i,k)=1-p^{ \text{drop}}(i,k),
+\end{equation*}
+otherwise drops out before answering. Conditional on remaining engaged, an ordinal
+response $Y_k\in\mathcal Y_i$ is then observed and the belief is updated.
+If dropout occurs, no response is observed and the one-step information gain is zero. We treat $p^{ \text{drop}}(i,k)$ as an
+exogenous time- and question-dependent engagement parameter, and in particular, on whether the question is sensitive. Concrete
+stylized parameterizations are discussed in Section~\ref{sec:dropout}.
+
+Conditional on the user remaining engaged after question $i_k$ is asked, the response
+at step $k$ is modeled by the random variable
+\begin{equation*}
+Y_k \in \mathcal Y_{i_k},
+\qquad
+\mathcal Y_{i_k}=\{0,1,\dots,m_{i_k}\}.
+\end{equation*}
+After the response is observed, we denote its realized value by
+\begin{equation*}
+y_k \in \mathcal Y_{i_k}.
+\end{equation*}
+The realized response event is denoted by $\{Y_k=y_k\}$. Then belief state is then updated
+from $s_k$ to $s_{k+1}$ using the Gaussian moment-matching update from Chapter \ref{sec:moments}.
+
+Given the current belief state $s_k$, we want to evaluate each candidate question
+by its expected immediate reduction in posterior uncertainty, taking into account that
+this reduction is realized only if the interaction continues. The resulting exact
+one-step score is derived next.
+
+\section[Exact One-Step Expected Uncertainty Reduction]{Exact One-Step \\Expected Uncertainty Reduction}\label{sec:exact}
+
+To obtain a one-step score for question selection, we first record the following standard identity.
+
+\begin{lemma}[Matrix Determinant Lemma]
+Let $A$ be an invertible square matrix and let $u,v \in \mathbb{R}^n$ be column vectors. Then
+\begin{equation}
+\det(A+uv^\top)= \det(A)\bigl(1+v^\top A^{-1}u\bigr).
+\label{eq:matrix_det_lemma}
+\end{equation}
+\end{lemma}
+
+Let us now fix a step $k$ with current belief state
+\begin{equation*}
+s_k=(\mu_k,\Sigma_k),
+\end{equation*}
+and let $i\in Q\setminus A_{k-1}$ be a candidate question. Conditional on the interaction
+continuing after question $i$ is proposed, an ordinal response
+\begin{equation*}
+Y_k \in \mathcal Y_i
+\end{equation*}
+is observed. For every possible realization $r\in\mathcal Y_i$, the response event
+$\{Y_k=r\}$ yields the moment-matched posterior covariance
+\begin{equation*}
+\Sigma_{k+1}^{(i,r)}
+=
+\Sigma_k
++
+\bigl(v_k^{(i,r)}-1\bigr)\,
+\frac{\Sigma_k a_q a_q^\top \Sigma_k}{a_q^\top \Sigma_k a_q},
+\end{equation*}
+by \eqref{eq:sigma_update}.
+
+Define
+\begin{equation*}
+\tilde q_i:=\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}.
+\end{equation*}
+Then
+\begin{equation*}
+\Sigma_{k+1}^{(i,r)}
+=
+\Sigma_k+\bigl(v_k^{(i,r)}-1\bigr)\tilde q_i\tilde q_i^\top.
+\end{equation*}
+Moreover, it is easy to see that
+\begin{equation}
+\tilde q_i^\top \Sigma_k^{-1}\tilde q_i
+=
+\frac{a_q^\top \Sigma_k \Sigma_k^{-1}\Sigma_k a_q}{a_q^\top\Sigma_k a_q}
+=
+\frac{a_q^\top\Sigma_k a_q}{a_q^\top\Sigma_k a_q}
+=
+1.
+\label{eq:q_norm_identity}
+\end{equation}
+
+Since $\Sigma_k$ is positive definite and therefore invertible, we can apply the matrix determinant lemma
+\eqref{eq:matrix_det_lemma} with
+\begin{equation*}
+A=\Sigma_k,
+\qquad
+u=\bigl(v_k^{(i,r)}-1\bigr)\tilde q_i,
+\qquad
+v=\tilde q_i.
+\end{equation*}
+Using \eqref{eq:q_norm_identity}, we obtain
+\begin{align*}
+\det\!\bigl(\Sigma_{k+1}^{(i,r)}\bigr)
+&=
+\det\!\bigl(\Sigma_k+\bigl(v_k^{(i,r)}-1\bigr)\tilde q_i\tilde q_i^\top\bigr) \\
+&=
+\Bigl(1+\bigl(v_k^{(i,r)}-1\bigr)\tilde q_i^\top\Sigma_k^{-1}\tilde q_i\Bigr)\det(\Sigma_k) \\
+&=
+\Bigl(1+\bigl(v_k^{(i,r)}-1\bigr)\Bigr)\det(\Sigma_k) \\
+&=
+v_k^{(i,r)}\det(\Sigma_k).
+\end{align*}
+
+To turn this into an additive score, we take logarithms. Conditional on receiving response category $r$, the resulting
+log-determinant reduction is
+\begin{equation*}
+\log\det(\Sigma_k)-\log\det\!\bigl(\Sigma_{k+1}^{(i,r)}\bigr)
+=
+-\log v_k^{(i,r)}.
+\end{equation*}
+Here $v_k^{(i,r)}\leq 1$, see Remark~\ref{rem:vle1}, so $-\log v_k^{(i,r)} \geq 0$.
+
+Taking into account that a response is only realized if the user stays engaged long enough to provide one, we can average the expected reduction over all possible responses. Let 
+\begin{equation*}
+p_k^{(i,r)} := \Pr(Y_k=r \mid s_k,\, i_k=i).
+\end{equation*}
+be the predictive probability that question $i$ elicits response
+category $r$ at step $k$, conditional on the interaction continuing.
+The exact one-step look-ahead score is then
+\begin{equation}\label{eq:exact}
+\Delta_{ }(i\mid s_k)
+:=
+p^{ \text{stay}}(i,k)
+\sum_{r\in\mathcal Y_i}
+p_k^{(i,r)}\,\bigl(-\log v_k^{(i,r)}\bigr).
+\end{equation}
+
+As in the ellipsoidal method introduced in Section~\ref{sec:ell}, it is natural to use a determinant-based measure of posterior uncertainty. Since the D-error is proportional to $\det(\Sigma_k)^{1/d}$, working with $\log\det(\Sigma_k)$ is equivalent to working with the logarithm of the D-error up to the constant factor $1/d$. We therefore use the log-determinant formulation for notational convenience.
+
+Selecting the next question then becomes solving
+\begin{equation}\label{eq:myopic_exact}
+i_k^{*} \in \arg\max_{i\in Q\setminus A_{k-1}} \Delta_{ }(i\mid s_k)
+\end{equation}
+at each step.
+
+\section{A Tractable Surrogate}\label{sec:surrogate}
+The exact one-step score \eqref{eq:exact} is already tractable at the current Gaussian
+belief state. By the one-step moment formulas from Chapter~\ref{chapter:approach},
+its evaluation reduces to one-dimensional projected quantities rather than a full
+high-dimensional Bayesian update. However, as an online ranking rule, it remains
+comparatively cumbersome: for each candidate question $i$, one must still compute the
+full collection of predictive category probabilities $p_k^{(i,r)}$, $r\in\mathcal Y_i$,
+together with the associated variance coefficients. We therefore introduce a simpler
+surrogate that preserves the same projected-uncertainty geometry.
+
+To do so, we return to the latent continuous score underlying the graded response
+model from Section~\ref{sec:grm}. In the ordinal model, question $i$ is generated by
+\begin{equation*}
+Z_i = a_q^\top \theta + \varepsilon_i,
+\qquad
+\varepsilon_i \sim \mathcal N(0,1).
+\end{equation*}
+But the platform does not observe $Z_i$ itself, only the ordinal category
+obtained by thresholding $Z_i$. As a benchmark, let us suppose instead that, conditional
+on the interaction continuing, the continuous score $Z_i$ were observed directly. 
+
+Under the current belief $\theta\mid s_k\sim\mathcal N(\mu_k,\Sigma_k)$, direct
+observation of $Z_i$  is a special case of the rank-one update structure
+from Chapter~\ref{chapter:approach}. 
+Let
+\begin{equation*}
+s_{i,k}^2:=a_q^\top\Sigma_k a_q
+\end{equation*}
+denote the prior variance in direction $a_q$. To incorporate engagement risk in the
+direct observation benchmark, we reduce the informativeness of the one-dimensional
+Gaussian observation according to the stay probability.  Equivalently, we consider
+\begin{equation*}
+Z_i=X_i+\eta_q,
+\qquad
+X_i:=a_q^\top\theta,
+\qquad
+\eta_q\sim\mathcal N\!\Bigl(0,\frac{1}{p^{\text{stay}}(i,k)}\Bigr).
+\end{equation*}
+Then
+\begin{equation*}
+\operatorname{Var}(X_i\mid Z_i)
+=
+s_{i,k}^2
+-
+\frac{s_{i,k}^4}{\,s_{i,k}^2+\frac{1}{p^{\text{stay}}(i,k)}\,}
+=
+\frac{s_{i,k}^2}{1+p^{\text{stay}}(i,k)\,s_{i,k}^2}.
+\end{equation*}
+Hence the associated variance coefficient is
+\begin{equation*}
+v_{i,k}^{\text{stay}}
+=
+\frac{\operatorname{Var}(X_i\mid Z_i)}{s_{i,k}^2}
+=
+\frac{1}{1+p^{\text{stay}}(i,k)\,s_{i,k}^2}
+=
+\frac{1}{1+p^{\text{stay}}(i,k)\,a_q^\top\Sigma_k a_q}.
+\end{equation*}
+The proxy covariance update with \eqref{eq:sigma_update} takes the form
+\begin{equation*}
+\Sigma_{k+1}^{\text{proxy},(i)}
+=
+\Sigma_k
++
+\bigl(v_{i,k}^{\text{stay}}-1\bigr)
+\frac{\Sigma_k a_q a_q^\top\Sigma_k}{a_q^\top\Sigma_k a_q}.
+\end{equation*}
+Applying the matrix determinant lemma
+with
+\begin{equation*}
+A:=\Sigma_k,
+\qquad
+u:=
+\frac{v_{i,k}^{\text{stay}}-1}{a_q^\top\Sigma_k a_q}\,\Sigma_k a_q,
+\qquad
+v:=\Sigma_k a_q,
+\end{equation*}
+we obtain
+\begin{equation*}
+\begin{aligned}
+v^\top A^{-1}u
+&=
+(\Sigma_k a_q)^\top \Sigma_k^{-1}
+\left(
+\frac{v_{i,k}^{\text{stay}}-1}{a_q^\top\Sigma_k a_q}\,\Sigma_k a_q
+\right) \\
+&=
+\frac{v_{i,k}^{\text{stay}}-1}{a_q^\top\Sigma_k a_q}\,
+a_q^\top\Sigma_k a_q \\
+&=
+v_{i,k}^{\text{stay}}-1.
+\end{aligned}
+\end{equation*}
+Therefore,
+\begin{equation*}
+\det\!\bigl(\Sigma_{k+1}^{\text{proxy},(i)}\bigr)
+=
+\det(\Sigma_k)\bigl(1+v_{i,k}^{\text{stay}}-1\bigr)
+=
+\det(\Sigma_k)\,v_{i,k}^{\text{stay}}.
+\end{equation*}
+Substituting in $v_{i,k}^{\text{stay}}$
+\begin{equation*}
+\log\det(\Sigma_k)-\log\det\!\bigl(\Sigma_{k+1}^{\text{proxy},(i)}\bigr)
+=
+-\log v_{i,k}^{\text{stay}}
+=
+\log\!\bigl(1+p^{\text{stay}}(i,k)\,a_q^\top\Sigma_k a_q\bigr).
+\end{equation*}
+This motivates the surrogate score
+\begin{equation*}
+\Delta_{\text{sur}}(i\mid s_k)
+:=
+\log\!\bigl(1+p^{\text{stay}}(i,k)\,a_q^\top\Sigma_k a_q\bigr).
+\label{eq:surrogate}
+\end{equation*}
+
+
+
+The surrogate \eqref{eq:surrogate} depends only on the stay probability
+$p^{\text{stay}}(i,k)$ and the projected posterior variance $a_q^\top \Sigma_k a_q$. It is therefore substantially simpler to evaluate than the exact ordinal score
+\eqref{eq:exact}, which requires the full predictive ordinal distribution together
+with the associated variance coefficients. The ordinal
+threshold structure still comes into play indirectly, as it shapes the current belief
+state $(\mu_k,\Sigma_k)$ in every update. 
+Moreover, the map $x \mapsto \log(1+x)$ is increasing and concave. Hence, the
+surrogate rewards questions that combine high projected uncertainty with a high
+stay probability. At the same time, the marginal
+benefit of further increasing the stay-weighted projected variance diminishes as that
+quantity grows. This way, uncertain directions remain attractive
+without dominating the ranking too aggressively.
+
+For the remainder of this chapter, this surrogate score serves \eqref{eq:surrogate_score} as a
+proxy for the exact ordinal score \eqref{eq:exact}.
+
+
+
+\section{Greedy Policy under Engagement Risk}\label{sec:greedy}
+We now turn the surrogate from Section~\ref{sec:surrogate} into an online selection rule. At step $k$, the current belief
+state $s_k=(\mu_k,\Sigma_k)$ has been produced by the recursive ordinal updates of
+Chapter~\ref{chapter:approach}. 
+Since repeated
+questions are excluded, the available candidate set is
+\begin{equation*}
+\mathcal F_k := Q\setminus A_{k-1}.
+\end{equation*}
+Among these candidates, we select an question with maximal stay-weighted surrogate
+score:
+\begin{equation*}
+i_k^{\text{greedy}}
+\in
+\arg\max_{i\in \mathcal F_k}
+\Delta_{\text{sur}}(i\mid s_k)
+=
+\arg\max_{i\in Q\setminus A_{k-1}}
+\log\!\bigl(1+p^{\text{stay}}(i,k)\,a_q^\top \Sigma_k a_q\bigr).
+\label{eq:greedy}
+\end{equation*}
+Ties are broken arbitrarily.
+
+This rule is myopic: at the current posterior state, it chooses the question with
+largest immediate stay-weighted projected-variance gain. Equivalently, it favors
+questions that probe directions of high posterior uncertainty while discounting
+questions that are unlikely to be answered because they carry greater engagement
+risk in the current slot.
+
+After proposing $i_k^{\text{greedy}}$, two outcomes are possible. With probability
+$p^{\text{drop}}(i_k^{\text{greedy}},k)$, the user disengages before answering and
+the interaction terminates. With probability
+$p^{\text{stay}}(i_k^{\text{greedy}},k)$, the user remains engaged, and a ordinal
+response
+\begin{equation*}
+Y_k \in \mathcal Y_{i_k^{\text{greedy}}}
+\end{equation*}
+is observed. Then the belief state is updated from $s_k$ to $s_{k+1}$ using the
+Gaussian moment-matching step of Chapter~\ref{chapter:approach}. In the latter case, the asked question
+set is updated by
+\begin{equation*}
+A_k = A_{k-1}\cup\{i_k^{\text{greedy}}\}.
+\end{equation*}
+
+In this formulation, early sensitive questions are not ruled out a
+priori, but neither are they treated as free. A question that is highly informative
+in the geometric sense may still be unattractive early in onboarding if its stay
+probability is low. Conversely, a sensitive question may still be selected when its
+projected uncertainty reduction is large enough to justify the engagement risk. Thus
+the greedy rule implements a soft trade-off between information gain and interaction
+stability.
+
+\subsection{Computational tractability}
+
+The computational burden of the deployed rule is modest. For each candidate question,
+the score in \eqref{eq:greedy} requires only the scalar quadratic form $a_q^\top \Sigma_k a_q$
+and the scalar weight $p^{\text{stay}}(i,k)$. If $\Sigma_k$ is stored as a full
+$n\times n$ matrix, evaluating one score costs $O(n^2)$, so scanning all remaining
+candidates costs
+\begin{equation*}
+O\bigl(|Q\setminus A_{k-1}|\,n^2\bigr).
+\end{equation*}
+
+After a response is observed, the covariance update from Chapter~7 is rank one in
+the question direction and can likewise be implemented in $O(n^2)$. Hence one greedy
+step - scoring the candidates and updating the belief after the realized response —
+has overall cost
+\begin{equation*}
+O\bigl(|Q\setminus A_{k-1}|\,n^2\bigr).
+\end{equation*}
+
+It is important to emphasize that the surrogate is not introduced out of
+computational necessity. By Proposition~\ref{prop:rank_one_update} and
+Corollary~\ref{cor:ordinal_coeffs}, the exact myopic ordinal score already reduces
+to one-dimensional projected quantities. We nevertheless retain the surrogate
+because it is simpler and more transparent. This added
+transparency is especially valuable in sensitive application settings such as
+mental-health onboarding, where the rationale for asking a question should remain
+easy to inspect and communicate. Moreover, the surrogate matches the local marginal
+structure of the weighted offline benchmark developed in the next section.
+
+\section{Offline Benchmark and Matroid Structure}
+Section \ref{sec:greedy} focused on the online decision problem and led to a myopic rule that
+maximizes one-step uncertainty reduction at every step. This is a natural policy
+in deployment, where question selection is inherently sequential and each decision must be made
+on the basis of the response history observed so far.  However, the same stochastic dependence makes the corresponding full-horizon planning problem difficult to analyze directly. We therefore complement the online rule with an offline benchmark that captures the same uncertainty-reduction principle across the full horizon.
+
+To distinguish posterior-dependent online decision steps from ex ante planning positions, we introduce slots $t = 1,...,T$, indexing positions in a planned questionnaire.
+
+\begin{definition}[Slot-dependent ground set]
+    For a fixed horizon $T$ and a question bank $Q$, let
+    \begin{equation}
+        E := \{(q,t) : q \in Q,\ t = 1,\dots,T\}
+    \end{equation}
+    denote the slot-dependent ground set. An element $(q,t)$ means that question $q$ is assigned to slot $t$.
+\end{definition}
+
+Recall from the preliminaries that, for a positive definite covariance matrix 
+$\Sigma$, we write $\Lambda = \Sigma^{-1}$ for the associated precision matrix. 
+While $\Sigma$ describes the remaining uncertainty, $\Lambda$ is more naturally interpreted as accumulated information. In particular, under a Gaussian approximation, the posterior precision can be expressed as the sum of prior precision and observed information, see Bernardo and Smith \cite{bernardo1994bayesian}.
+This makes the precision space natural for the offline benchmark.
+
+\begin{definition}[Offline benchmark objective]
+Let $\Lambda_0 = \Sigma^{-1}_0$ be the precision given through the prior. For each $(q,t)\in E$, define the deterministic stay-weighted rank-one precision
+increment
+\begin{equation}
+    \bar I_{q,t} := p^{\text{stay}}(q,t)\, a_q a_q^\top . \label{eq:increment}
+\end{equation}
+For any set $S\subseteq E$, let
+\[
+\Lambda(S) := \Lambda_0 + \sum_{(q,t)\in S} \bar I_{q,t},
+\]
+and define the offline benchmark objective
+\begin{equation}\label{eq:off_obj}
+   f(S) := \log\det(\Lambda(S)) - \log\det(\Lambda_0). 
+\end{equation}
+
+\end{definition}
+This benchmark disregards the observed ordinal responses and the posterior trajectory they induce, and thus fails to represent the complete adaptive problem. Instead, starting from the
+prior precision $\Lambda_0$, it assigns each question--slot pair $(q,t)$ a deterministic
+stay-weighted rank-one precision increment
+and evaluates a complete question schedule through the resulting log-determinant gain. Hence,
+question–slot pairs that have a lower stay probability contribute less to the benchmark value. In the direct-observation surrogate, this choice of weighting can be viewed as stemming from an effective noise level that depends on the current state.\footnote{For a scalar Gaussian observation
+$y_{q,t}=a_q^\top\theta+\varepsilon_{q,t}$ with
+$\varepsilon_{q,t}\sim\mathcal N(0,\sigma_{q,t}^2)$, the associated rank-one
+precision contribution is $\sigma_{q,t}^{-2} a_q a_q^\top$. Choosing the effective
+noise variance as $\sigma_{q,t}^2=1/p^{\text{stay}}(q,t)$ gives
+$\sigma_{q,t}^{-2} a_q a_q^\top
+= p^{\text{stay}}(q,t)\,a_q a_q^\top$. Thus, lower stay probability corresponds
+to higher effective noise and therefore to a smaller information contribution.} As $\Lambda_0$ is positive definite and each $\bar I_{q,t}$ is positive semidefinite, the matrix $\Lambda(S)$
+is positive definite for every $S\subseteq E$.
+
+Due to its incremental structure, the offline benchmark admits a closed-form expression for its marginal gain.
+
+\begin{prop}[Marginal gain formula]\label{prop:marginal}
+Let $S\subseteq E$ and $(q,t)\in E\setminus S$. Then
+\[
+f(S\cup\{(q,t)\}) - f(S)
+=
+\log\!\Bigl(1 + p^{\text{stay}}(q,t)\, a_q^\top \Lambda(S)^{-1} a_q\Bigr).
+\]
+\end{prop}
+
+\begin{proof}
+As defined, the matrix $\Lambda(S)$
+is positive definite for every $S\subseteq E$. Write
+\[
+\bar I_{q,t} = u u^\top,
+\qquad
+u := \sqrt{p^{\text{stay}}(q,t)}\, a_q.
+\]
+Then
+\[
+\Lambda(S\cup\{(q,t)\}) = \Lambda(S) + u u^\top.
+\]
+By the matrix determinant lemma,
+\[
+\det(\Lambda(S)+u u^\top)
+=
+\det(\Lambda(S))\bigl(1+u^\top \Lambda(S)^{-1}u\bigr).
+\]
+Taking logarithms and subtracting $\log\det(\Lambda(S))$ gives
+\begin{align*}
+   f(S\cup\{(q,t)\}) - f(S)
+&= 
+\log\!\bigl(1+u^\top \Lambda(S)^{-1}u\bigr)\\
+&= 
+\log\!\Bigl(1 + p^{\text{stay}}(q,t)\, a_q^\top \Lambda(S)^{-1} a_q\Bigr). 
+\end{align*}
+\end{proof}
+
+Since $\Lambda(S)^{-1}$
+is the covariance matrix associated with the benchmark precision state 
+$\Lambda(S)$, Proposition \ref{prop:marginal} recovers the same stay-weighted projected-variance structure as the surrogate in Section~\ref{sec:surrogate}.
+
+
+The benchmark objective \eqref{eq:off_obj} assigns a value to any set of question-slot
+assignments $S \subseteq E$. But, not every
+subset of $E$ is implementable. We therefore restrict attention to assignment sets that
+satisfy the natural planning constraints of the benchmark: each slot can contain at most
+one question, and each question can be used at most once over the horizon.
+
+To formalize this, recall that an element $(q,t) \in E$ means that question $q \in Q$
+is assigned to slot $t \in [T]$. We define the two feasibility families
+\begin{equation}
+\mathcal I_{\text{slot}}
+:=
+\Bigl\{
+S \subseteq E :
+|S \cap (Q \times \{t\})| \le 1
+\text{ for all } t \in [T]
+\Bigr\},
+\end{equation}
+and
+\begin{equation}
+\mathcal I_{\text{reuse}}
+:=
+\Bigl\{
+S \subseteq E :
+|S \cap (\{i\} \times [T])| \le 1
+\text{ for all } q \in Q
+\Bigr\}.
+\end{equation}
+The first family enforces that at most one question is assigned to each slot. The
+second excludes reusing the same question at multiple positions in the planned questionnaire.
+The feasible family for the offline benchmark is therefore
+\[
+\mathcal I := \mathcal I_{\text{slot}} \cap \mathcal I_{\text{reuse}}.
+\]
+Accordingly, the offline benchmark problem can be written as
+\begin{equation}\label{eq:offline_bench}
+\max \{ f(S) : S \in \mathcal I \}.
+\end{equation}
+This feasible-set structure admits a standard combinatorial interpretation.
+
+\begin{prop}[Feasibility constraints as partition matroids]\label{prop:partition_matroids}
+The families $\mathcal I_{\text{slot}}$ and
+$\mathcal I_{\text{reuse}}$ define partition matroids on the ground set $E$.
+Consequently, the feasible family
+\[
+\mathcal I = \mathcal I_{\text{slot}} \cap \mathcal I_{\text{reuse}}
+\]
+is the intersection of two partition matroids.
+\end{prop}
+
+\begin{proof}
+For $\mathcal I_{\text{slot}}$, partition the ground set $E$ into the
+blocks
+\[
+E_t := Q \times \{t\}, \qquad t \in [T].
+\]
+Then $S \in \mathcal I_{\text{slot}}$ if and only if $S$ contains at most
+one element from each block $E_t$. This matches the definition of a
+partition matroid with unit capacities.
+
+Similarly, for $\mathcal I_{\text{reuse}}$, partition $E$ into the blocks
+\[
+E_i := \{i\} \times [T], \qquad q \in Q.
+\]
+Then again $S \in \mathcal I_{\text{reuse}}$ if and only if $S$ contains at
+most one element from each block $E_i$, corresponding to a partition matroid
+with unit capacities.
+
+Hence $\mathcal I_{\text{slot}}$ and $\mathcal I_{\text{reuse}}$ are
+partition matroids, and $\mathcal I$ is their intersection.
+\end{proof}
+
+It remains to analyze the objective \eqref{eq:off_obj}.
+
+
+\begin{theorem}[Monotonicity and submodularity of the benchmark objective]\label{thm:submodular_offline}
+The benchmark objective $f:2^E\to\mathbb R$ is monotone and submodular.
+\end{theorem}
+
+\begin{proof}
+Fix $S\subseteq E$ and $(q,t)\in E\setminus S$. By
+Proposition~\ref{prop:marginal},
+\[
+f(S\cup\{(q,t)\}) - f(S)
+=
+\log\!\Bigl(1 + p^{\text{stay}}(q,t)\, a_q^\top \Lambda(S)^{-1} a_q\Bigr).
+\]
+Since $\Lambda(S)$ is positive definite, its inverse $\Lambda(S)^{-1}$ is also positive
+definite. Hence
+\[
+x^\top \Lambda(S)^{-1}x > 0
+\qquad\text{for all } x\neq 0.
+\]
+In particular, if $a_i\neq 0$, then
+\[
+a_i^\top \Lambda(S)^{-1} a_i > 0.
+\]
+Because $p^{\text{stay}}(q,t)\ge 0$ and $x\mapsto \log(1+x)$ is increasing on
+$[0,\infty)$, every marginal gain is nonnegative. Therefore $f$ is monotone.
+
+Now let $A\subseteq B\subseteq E$ and $(q,t)\in E\setminus B$. Since each
+$\bar I_e \succeq 0$,
+\[
+\Lambda(B)-\Lambda(A)
+=
+\sum_{e\in B\setminus A}\bar I_e
+\succeq 0,
+\]
+and thus
+\[
+\Lambda(B)\succeq \Lambda(A).
+\]
+Because both matrices are positive definite, inversion reverses the Loewner order,
+giving
+\[
+\Lambda(B)^{-1} \preceq \Lambda(A)^{-1}.
+\]
+Taking quadratic forms in direction $a_q$ leads to
+\[
+a_q^\top \Lambda(B)^{-1} a_q
+\le
+a_q^\top \Lambda(A)^{-1} a_q.
+\]
+Using again that $x\mapsto \log(1+x)$ is increasing on $[0,\infty)$, we obtain
+\begin{align*}
+f(A\cup\{(q,t)\}) - f(A)
+&=
+\log\!\Bigl(1 + p^{\text{stay}}(q,t)\, a_q^\top \Lambda(A)^{-1} a_q\Bigr)
+\\
+&\ge
+\log\!\Bigl(1 + p^{\text{stay}}(q,t)\, a_q^\top \Lambda(B)^{-1} a_q\Bigr)
+\\
+&=
+f(B\cup\{(q,t)\}) - f(B).
+\end{align*}
+Thus the marginal gain of adding $(q,t)$ decreases as the selected set grows,
+so $f$ is submodular.
+\end{proof}
+
+Theorem~\ref{thm:submodular_offline}, together with Proposition~\ref{prop:partition_matroids}, places the offline benchmark in the setting of monotone submodular maximization under matroid intersection constraints. We may therefore invoke the classical greedy approximation guarantee for this class of problems.
+
+\begin{corollary}[Greedy guarantee for the offline benchmark]
+\label{cor:offline_greedy}
+Let $\mathcal I = \mathcal I_{\text{slot}} \cap \mathcal I_{\text{reuse}}$,
+and let $S^{\text{greedy}}$ be the set produced by the standard feasible greedy rule
+\begin{alignat*}{2}
+S_0 &:= \varnothing, \qquad S_{m+1} &:= S_m \cup \{e^*\},
+\end{alignat*}
+where $e^* \in \operatorname*{arg\,max}
+\bigl\{f(S_m \cup \{e\}) - f(S_m) :
+e \in E \setminus S_m,\ S_m \cup \{e\} \in \mathcal{I}\bigr\}$,
+
+repeated until no further feasible element can be added. Then
+\[
+f(S^{\text{greedy}})
+\;\ge\;
+\frac{1}{3}\,
+\max_{S \in \mathcal I} f(S).
+\]
+\end{corollary}
+
+\begin{proof}
+By Proposition~\ref{prop:partition_matroids}, the feasible family $\mathcal I$ is the
+intersection of two partition matroids. By Theorem~\ref{thm:submodular_offline},
+the objective $f$ is monotone submodular. The standard greedy guarantee for monotone
+submodular maximization under the intersection of $p$ matroids yields
+\[
+f(S^{\text{greedy}})
+\ge
+\frac{1}{p+1}\max_{S\in\mathcal I} f(S).
+\]
+Setting $p=2$ gives the claim.
+\end{proof}
+
+The offline benchmark provides a structural reference point for the online policy: under the natural slot and no-reuse constraints, its greedy solution enjoys a standard approximation guarantee, while Proposition~\ref{prop:marginal} shows that its one-step marginal has the same stay-weighted projected-variance form as the online surrogate. In this way, the benchmark both supplies a full-horizon comparison object and clarifies the geometry behind the score used by the online rule.
+
+\section{Encoding Sensitivity}\label{sec:dropout}
+In the earlier sections, the stay probability
+$
+p_{\mathrm{stay}}(i,k)
+$
+was treated as an exogenous parameter for both the online score and the offline benchmark. We now consider how this quantity can be implemented in practical application.
+
+As discussed in Chapter \ref{chapter:moti}, sensitive questions come at a cost: 
+while intrusive questions can be particularly informative, they are also more likely 
+to
+induce discomfort, mistrust, or disengagement. We therefore regard sensitivity as a question-specific property that influences how likely it is for the interaction to continue.
+
+We capture this formally by assigning each question $q \in Q$ a sensitivity score
+\begin{equation*}
+ \text{sens}(i) \in \left[0,1\right],
+\end{equation*}
+where higher values indicate questions that are perceived as more intrusive. The stay probability can then be modeled as a function of both the
+question and the step at which it is asked,
+\[
+p_{\mathrm{stay}}(i,k) = g(\text{sens}(i),k),
+\]
+where $g$ is decreasing in $\text{sens}(i)$. Meaning, more sensitive questions are assigned a lower
+probability of being answered, all else equal.
+
+The step index $k$ is included because the engagement cost of a question may vary over the course of the interaction. A question that feels too intrusive in the beginning may
+be less problematic once some trust has been established. To reflect this, one may choose $g$
+so that the penalty associated with sensitivity is strongest in early slots and weakens later in the
+questionnaire. A simple stylized specification is
+\[
+p_{\mathrm{stay}}(i,k)=1-\gamma_k\,\mathrm{sens}(i),
+\]
+where $\mathrm{sens}(i)\in\{0,1\}$ and the sequence $(\gamma_k)_{k\ge 1}$ satisfies
+\[
+1>\gamma_1\ge \gamma_2\ge \cdots \ge 0.
+\]
+Thus non-sensitive questions have a stay probability equal to 1, while sensitive questions face a step-dependent engagement penalty that weakens over time. More broadly, any formulation can be employed as long as it maintains the qualitative monotonic
+relationship whereby higher sensitivity is associated with a lower stay probability.
+
+
+Beyond its effect on engagement, sensitivity may also affect the
+quality of the response itself. In particular, especially intrusive questions may elicit noisier or less
+reliable answers even when the user does respond. As discussed in Remark~\ref{rem:question_noise},
+this can be represented through question-specific response noise in the observation model. Noisier answers then weaken
+the posterior update generated by that question, cautioning the use of sensitive questions further.
+
+Further constraints can also supplement practical deployments. For instance, one may impose simple early-stage guardrails, such as favoring low-sensitivity
+questions in the initial steps or entirely omitting a small group of highly intrusive questions from the
+ first phase of onboarding.
+
+\newpage
+\bibliographystyle{apa}
+\printbibliography
+
+\newpage
+\appendix
+\addcontentsline{toc}{chapter}{Appendix}
+\chapter{Omitted Proofs}
+\section{Proof of Proposition \ref{prop:rank_one_update}}
+\begin{proof}
+Define the residual
+\begin{equation*}
+\xi_{k,i}
+:=
+\theta-\mu_k-\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,U_{k,i}.
+\end{equation*}
+Conditional on $H_k$, both $U_{k,i}$ and $\xi_{k,i}$ are Gaussian, since they are affine
+functions of the Gaussian random vector $\theta\mid H_k$. Hence it suffices to show that they
+are uncorrelated conditional on $H_k$.
+
+By construction,
+\begin{equation*}
+U_{k,i}
+=
+\frac{a_q^\top(\theta-\mu_k)}{\sqrt{a_q^\top\Sigma_k a_q}},
+\end{equation*}
+so
+\begin{equation*}
+\operatorname{Var}(U_{k,i}\mid H_k)
+=
+\frac{a_q^\top\Sigma_k a_q}{a_q^\top\Sigma_k a_q}
+=1,
+\end{equation*}
+and
+\begin{equation*}
+\operatorname{Cov}(\theta,U_{k,i}\mid H_k)
+=
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}.
+\end{equation*}
+Therefore
+\begin{equation*}
+\operatorname{Cov}(\xi_{k,i},U_{k,i}\mid H_k)
+=
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}
+-
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}
+\operatorname{Var}(U_{k,i}\mid H_k)
+=0.
+\end{equation*}
+Thus $U_{k,i}$ and $\xi_{k,i}$ are independent conditional on $H_k$.
+
+Because $\varepsilon_i$ is independent of $\theta$, it is independent of both $U_{k,i}$ and
+$\xi_{k,i}$. Hence $\xi_{k,i}$ is independent of the pair $(U_{k,i},\varepsilon_i)$, and therefore
+also independent of the event $\{Y_i=r\}$ conditional on $H_k$. Consequently,
+\begin{equation*}
+\mathbb E[\xi_{k,i}\mid H_k,i,Y_i=r]=0,
+\qquad
+\operatorname{Cov}(\xi_{k,i}\mid H_k,i,Y_i=r)=\operatorname{Cov}(\xi_{k,i}\mid H_k).
+\end{equation*}
+
+Using the decomposition
+\begin{equation*}
+\theta
+=
+\mu_k
++
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,U_{k,i}
++
+\xi_{k,i},
+\end{equation*}
+we obtain
+\begin{equation*}
+\mathbb E[\theta\mid H_k,i,Y_i=r]
+=
+\mu_k+
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}
+\mathbb E[U_{k,i}\mid H_k,i,Y_i=r],
+\end{equation*}
+which yields
+\begin{equation*}
+\mu_{k+1}^{(i,r)}
+=
+\mu_k+
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,m_{k}^{(i,r)}.
+\end{equation*}
+
+Similarly,
+\begin{equation*}
+\operatorname{Cov}(\theta\mid H_k,i,Y_i=r)
+=
+\operatorname{Cov}\!\left(
+\frac{\Sigma_k a_q}{\sqrt{a_q^\top\Sigma_k a_q}}\,U_{k,i}
++\xi_{k,i}
+\;\middle|\;H_k,i,Y_i=r
+\right).
+\end{equation*}
+Since $\xi_{k,i}$ is independent of both $U_{k,i}$ and the response event conditional on $H_k$,
+this becomes
+\begin{equation*}
+\operatorname{Cov}(\theta\mid H_k,i,Y_i=r)
+=
+\frac{\Sigma_k a_q a_q^\top\Sigma_k}{a_q^\top\Sigma_k a_q}
+\operatorname{Var}(U_{k,i}\mid H_k,i,Y_i=r)
++
+\operatorname{Cov}(\xi_{k,i}\mid H_k).
+\end{equation*}
+Finally, by definition of $\xi_{k,i}$,
+\begin{equation*}
+\operatorname{Cov}(\xi_{k,i}\mid H_k)
+=
+\Sigma_k-
+\frac{\Sigma_k a_q a_q^\top\Sigma_k}{a_q^\top\Sigma_k a_q}.
+\end{equation*}
+Substituting gives
+\begin{equation*}
+\Sigma_{k+1}^{(i,r)}
+=
+\Sigma_k+
+(v_{k}^{(i,r)}-1)\,
+\frac{\Sigma_k a_q a_q^\top\Sigma_k}{a_q^\top\Sigma_k a_q}.
+\end{equation*}
+\end{proof}
+\newpage
+\section{Proof of Corollary \ref{cor:ordinal_coeffs}}
+\begin{proof}
+\label{appendix:truncated_normal_derivation}
+
+Fix step $k$, question $i$, and response category $r$. Under the current Gaussian belief,
+\begin{equation*}
+\theta \mid H_k \sim \mathcal N(\mu_k,\Sigma_k),
+\end{equation*}
+define
+\begin{equation*}
+U_{k,i}:=\frac{a_q^\top(\theta-\mu_k)}{s_{k,i}},
+\qquad
+s_{k,i}^2:=a_q^\top\Sigma_k a_q.
+\end{equation*}
+Then $U_{k,i}\sim \mathcal N(0,1)$.
+
+Next define the standardized observed score
+\begin{equation*}
+D_{k,i}
+:=
+\frac{a_q^\top\theta+\varepsilon_i-a_q^\top\mu_k}{\gamma_{k,i}},
+\qquad
+\gamma_{k,i}:=\sqrt{s_{k,i}^2+1},
+\end{equation*}
+where $\varepsilon_i\sim\mathcal N(0,1)$ is independent of $\theta$. Since
+\begin{equation*}
+a_q^\top\theta+\varepsilon_i
+=
+a_q^\top\mu_k+s_{k,i}U_{k,i}+\varepsilon_i,
+\end{equation*}
+it follows that $(U_{k,i},D_{k,i})$ is jointly Gaussian with
+\begin{equation*}
+\mathbb E[U_{k,i}]
+=
+\mathbb E[D_{k,i}]
+=
+0,
+\qquad
+\operatorname{Var}(U_{k,i})
+=
+\operatorname{Var}(D_{k,i})
+=
+1,
+\end{equation*}
+and
+\begin{equation*}
+\operatorname{Corr}(U_{k,i},D_{k,i})
+=
+\frac{s_{k,i}}{\gamma_{k,i}}
+=
+\rho_{k,i}.
+\end{equation*}
+
+Under the ordinal-probit model, observing category $r$ for question $i$ at step $k$ means
+\begin{equation*}
+Y_k=r
+\quad\Longleftrightarrow\quad
+\tau_{i,r}\le a_q^\top\theta+\varepsilon_i<\tau_{i,r+1},
+\end{equation*}
+which is equivalent to
+\begin{equation*}
+Y_k=r
+\quad\Longleftrightarrow\quad
+\alpha_k^{(i,r)}\le D_{k,i}<\beta_k^{(i,r)},
+\end{equation*}
+where
+\begin{equation*}
+\alpha_k^{(i,r)}:=\frac{\tau_{i,r}-a_q^\top\mu_k}{\gamma_{k,i}},
+\qquad
+\beta_k^{(i,r)}:=\frac{\tau_{i,r+1}-a_q^\top\mu_k}{\gamma_{k,i}}.
+\end{equation*}
+Hence conditioning on $Y_k=r$ is equivalent to conditioning the standard normal
+variable $D_{k,i}$ to lie in the interval $[\alpha_k^{(i,r)},\beta_k^{(i,r)})$.
+
+Therefore,
+\begin{equation*}
+p_k^{(i,r)}:=\Phi\!\bigl(\beta_k^{(i,r)}\bigr)-\Phi\!\bigl(\alpha_k^{(i,r)}\bigr)
+\end{equation*}
+is the predictive probability of category $r$, and the standard formulas for a
+truncated standard normal yield
+\begin{equation*}
+\mathbb E[D_{k,i}\mid Y_k=r]
+=
+\lambda_k^{(i,r)}
+=
+\frac{\phi\!\bigl(\alpha_k^{(i,r)}\bigr)-\phi\!\bigl(\beta_k^{(i,r)}\bigr)}{p_k^{(i,r)}},
+\end{equation*}
+and
+\begin{equation*}
+\operatorname{Var}(D_{k,i}\mid Y_k=r)
+=
+\eta_k^{(i,r)}
+=
+1+
+\frac{\alpha_k^{(i,r)}\phi\!\bigl(\alpha_k^{(i,r)}\bigr)
+-\beta_k^{(i,r)}\phi\!\bigl(\beta_k^{(i,r)}\bigr)}{p_k^{(i,r)}}
+-\bigl(\lambda_k^{(i,r)}\bigr)^2.
+\end{equation*}
+
+Because $(U_{k,i},D_{k,i})$ is jointly Gaussian with correlation $\rho_{k,i}$, we
+have
+\begin{equation*}
+U_{k,i}\mid D_{k,i}=d
+\sim
+\mathcal N\!\bigl(\rho_{k,i}d,\;1-\rho_{k,i}^2\bigr).
+\end{equation*}
+Applying the law of total expectation gives
+\begin{equation*}
+m_k^{(i,r)}
+=
+\mathbb E[U_{k,i}\mid Y_k=r]
+=
+\rho_{k,i}\,\mathbb E[D_{k,i}\mid Y_k=r]
+=
+\rho_{k,i}\lambda_k^{(i,r)}.
+\end{equation*}
+Similarly, the law of total variance yields
+\begin{equation*}
+v_k^{(i,r)}
+=
+\operatorname{Var}(U_{k,i}\mid Y_k=r)
+=
+\mathbb E\!\left[\operatorname{Var}(U_{k,i}\mid D_{k,i})\mid Y_k=r\right]
++
+\operatorname{Var}\!\left(\mathbb E[U_{k,i}\mid D_{k,i}]\mid Y_k=r\right),
+\end{equation*}
+so that
+\begin{equation*}
+v_k^{(i,r)}
+=
+(1-\rho_{k,i}^2)+\rho_{k,i}^2\operatorname{Var}(D_{k,i}\mid Y_k=r)
+=
+1-\rho_{k,i}^2+\rho_{k,i}^2\eta_k^{(i,r)}.
+\end{equation*}
+This proves the claim.
+\end{proof}
+\newpage
+\section{Proof of the Rank-One Fisher Information}\label{appendix:fisher}
+Let
+\begin{equation*}
+p_i(\theta)
+=
+\mathbb P(Y_i=1\mid \theta)
+=
+\sigma\!\bigl(D(a_q^\top\theta-b_i)\bigr),
+\end{equation*}
+where $\sigma(t)=1/(1+e^{-t})$. For a binary response
+$Y_i\in\{0,1\}$, the log-likelihood is
+\begin{equation*}
+\ell_i(\theta;Y_i)
+=
+Y_i\log p_i(\theta)
++
+(1-Y_i)\log\bigl(1-p_i(\theta)\bigr).
+\end{equation*}
+A short calculation gives
+\begin{equation*}
+\nabla_\theta \ell_i(\theta;Y_i)
+=
+D\bigl(Y_i-p_i(\theta)\bigr)a_q,
+\qquad
+\nabla_\theta^2 \ell_i(\theta;Y_i)
+=
+-\,D^2p_i(\theta)\bigl(1-p_i(\theta)\bigr)a_q a_q^\top,
+\end{equation*}
+and hence the Fisher information is
+\begin{equation*}
+I_i(\theta)
+=
+-\mathbb E\!\left[\nabla_\theta^2\ell_i(\theta;Y_i)\mid \theta\right]
+=
+D^2p_i(\theta)\bigl(1-p_i(\theta)\bigr)a_q a_q^\top.
+\end{equation*}
+We see that a single question
+contributes only in the one-dimensional subspace spanned by its
+discrimination vector $a_q$.
+\newpage
+\section{Proof of Remark \ref{rem:vle1}}\label{appendix:truncated_variance_bound}
+\begin{lemma}[Bound on the truncated-normal variance factor]
+\label{lem:eta_bound}
+For every step $k$, question $i$, and category $r$ with $p_k^{(i,r)}>0$, the truncated-normal
+variance factor satisfies
+\begin{equation*}
+0<\eta_k^{(i,r)}\le 1.
+\end{equation*}
+Consequently,
+\begin{equation*}
+0<v_k^{(i,r)}
+=
+1-\rho_{k,i}^2+\rho_{k,i}^2\eta_k^{(i,r)}
+\le 1.
+\end{equation*}
+\end{lemma}
+
+\begin{proof}
+Fix $k,i,r$ and write
+\begin{equation*}
+\alpha:=\alpha_k^{(i,r)},\qquad
+\beta:=\beta_k^{(i,r)},\qquad
+p:=p_k^{(i,r)}=\Phi(\beta)-\Phi(\alpha),
+\qquad
+\lambda:=\lambda_k^{(i,r)}=\frac{\phi(\alpha)-\phi(\beta)}{p}.
+\end{equation*}
+Then $\eta_k^{(i,r)}$ is the variance of a standard normal random variable truncated to the
+interval $[\alpha,\beta)$, namely
+\begin{equation*}
+\eta_k^{(i,r)}=\operatorname{Var}(Z\mid \alpha\le Z<\beta),
+\qquad Z\sim\mathcal N(0,1).
+\end{equation*}
+In particular, $\eta_k^{(i,r)}>0$ whenever $p>0$.
+
+The formulas remain valid also in the extreme categories where one endpoint may be infinite,
+using the standard convention
+\begin{equation*}
+\phi(-\infty)=\phi(+\infty)=0,
+\qquad
+\Phi(-\infty)=0,\quad \Phi(+\infty)=1.
+\end{equation*}
+
+To prove the upper bound, start from the closed-form expression
+\begin{equation*}
+\eta_k^{(i,r)}
+=
+1+\frac{\alpha\phi(\alpha)-\beta\phi(\beta)}{p}-\lambda^2.
+\end{equation*}
+Using $\lambda p=\phi(\alpha)-\phi(\beta)$, we may rewrite this as
+\begin{equation*}
+\eta_k^{(i,r)}
+=
+1+\frac{(\alpha-\lambda)\phi(\alpha)-(\beta-\lambda)\phi(\beta)}{p}.
+\end{equation*}
+Now $\lambda=\mathbb E[Z\mid \alpha\le Z<\beta]$ is the conditional mean of a random variable
+supported on $[\alpha,\beta)$, hence
+\begin{equation*}
+\alpha\le \lambda\le \beta.
+\end{equation*}
+Therefore
+\begin{equation*}
+\alpha-\lambda\le 0,
+\qquad
+\beta-\lambda\ge 0,
+\end{equation*}
+and since $\phi(\alpha),\phi(\beta)\ge 0$, it follows that
+\begin{equation*}
+(\alpha-\lambda)\phi(\alpha)-(\beta-\lambda)\phi(\beta)\le 0.
+\end{equation*}
+Hence
+\begin{equation*}
+\eta_k^{(i,r)}\le 1.
+\end{equation*}
+
+Finally, because $0<\eta_k^{(i,r)}\le 1$ and $|\rho_{k,i}|\leq 1$ we obtain
+\begin{equation*}
+0<
+1-\rho_{k,i}^2+\rho_{k,i}^2\eta_k^{(i,r)}
+\le
+1-\rho_{k,i}^2+\rho_{k,i}^2
+=1,
+\end{equation*}
+which is exactly
+\begin{equation*}
+0<v_k^{(i,r)}\le 1.
+\end{equation*}
+\end{proof}
+\newpage
+\section{Proof of Positive Definiteness under Rank-one Updates} \label{appendix:posdef}
+\begin{proof}
+By definition, $\Sigma_0\succ 0$. It therefore suffices to show that if $\Sigma_k\succ 0$,
+then $\Sigma_{k+1}^{(i,r)}\succ 0$ for every feasible response realization $(i,r)$.
+
+Let $(i,r)$ be any feasible question-response pair.
+By the rank-one covariance update,
+\begin{equation*}
+\Sigma_{k+1}^{(i,r)}
+=
+\Sigma_k
++
+\bigl(v_k^{(i,r)}-1\bigr)
+\frac{\Sigma_k a_q a_q^\top \Sigma_k}{a_q^\top \Sigma_k a_q}.
+\end{equation*}
+Let $x\in\mathbb R^d$ with $x\neq 0$. Then
+\begin{equation*}
+x^\top \Sigma_{k+1}^{(i,r)} x
+=
+x^\top \Sigma_k x
++
+\bigl(v_k^{(i,r)}-1\bigr)
+\frac{(x^\top \Sigma_k a_q)^2}{a_q^\top \Sigma_k a_q}.
+\end{equation*}
+Since $\Sigma_k\succ 0$, the bilinear form
+\begin{equation*}
+\langle u,v\rangle_{\Sigma_k}:=u^\top \Sigma_k v
+\end{equation*}
+defines an inner product. Hence, by the Cauchy--Schwarz inequality,
+\begin{equation*}
+(x^\top \Sigma_k a_q)^2
+\le
+(x^\top \Sigma_k x)(a_q^\top \Sigma_k a_q).
+\end{equation*}
+Dividing by $a_q^\top \Sigma_k a_q>0$ yields
+\begin{equation*}
+\frac{(x^\top \Sigma_k a_q)^2}{a_q^\top \Sigma_k a_q}
+\le
+x^\top \Sigma_k x.
+\end{equation*}
+Using this and the fact that $0<v_k^{(i,r)}\le 1$ from
+Remark~\ref{rem:variance_bound}, we obtain
+\begin{align*}
+x^\top \Sigma_{k+1}^{(i,r)} x
+&=
+x^\top \Sigma_k x
+-
+\bigl(1-v_k^{(i,r)}\bigr)
+\frac{(x^\top \Sigma_k a_q)^2}{a_q^\top \Sigma_k a_q} \\
+&\ge
+x^\top \Sigma_k x
+-
+\bigl(1-v_k^{(i,r)}\bigr)x^\top \Sigma_k x \\
+&=
+v_k^{(i,r)}\,x^\top \Sigma_k x.
+\end{align*}
+Because $v_k^{(i,r)}>0$ and $\Sigma_k\succ 0$, the right-hand side is strictly positive.
+Therefore
+\begin{equation*}
+x^\top \Sigma_{k+1}^{(i,r)} x>0
+\qquad\text{for all }x\neq 0,
+\end{equation*}
+so $\Sigma_{k+1}^{(i,r)}\succ 0$.
+
+This proves the induction step. 
+\end{proof}
+
+\newpage
+\include{fig_ellipsoid_updates}
+Mututal information relationship:
+The same quantity can also be read as a one-step information gain. In the same
+linear-Gaussian benchmark,
+\begin{equation*}
+I(\theta;Z_i\mid s_k)
+=
+H(Z_i\mid s_k)-H(Z_i\mid \theta,s_k).
+\end{equation*}
+Since
+\begin{equation*}
+Z_i\mid s_k \sim \mathcal N(a_q^\top\mu_k,\;1+a_q^\top\Sigma_k a_q)
+\quad\text{and}\quad
+Z_i\mid \theta,s_k \sim \mathcal N(a_q^\top\theta,\;1),
+\end{equation*}
+the Gaussian entropy formula gives
+\begin{equation*}
+I(\theta;Z_i\mid s_k)
+=
+\frac12\log\!\bigl(1+a_q^\top\Sigma_k a_q\bigr).
+\end{equation*}
+Hence, up to the constant factor $1/2$, the same expression measures the information
+gained from observing the latent score directly.
+
+\section{Natural parameters and the damped scalar update}
+\label{app:natural_damping}
+
+This appendix explains the natural-parameter representation used in
+Section~\ref{sec:damped_gaussian_projection} and derives the damped scalar moments.
+The derivation is consistent with the moment-matching viewpoint of assumed-density
+filtering and expectation propagation (EP) developed by Minka
+in~\cite{minka2001thesis,minka2001ep}, and with the use of an explicit step size
+in EP-style Gaussian updates as discussed by So and
+Turner~\cite{so2024fearless}.
+
+A Gaussian distribution belongs to the exponential family. In one dimension, a
+density of the form $N(m,v)$ can be written as
+\[
+p(u)
+=
+\frac{1}{\sqrt{2\pi v}}
+\exp\!\left(
+-\frac{(u-m)^2}{2v}
+\right).
+\]
+Expanding the quadratic term in the exponent gives
+\[
+-\frac{(u-m)^2}{2v}
+=
+-\frac{u^2}{2v}+\frac{m}{v}u-\frac{m^2}{2v}.
+\]
+Hence the density can be rewritten as
+\[
+p(u)
+\propto
+\exp\!\left(
+\eta u-\frac{\lambda}{2}u^2
+\right),
+\]
+where
+\[
+\eta=\frac{m}{v},
+\qquad
+\lambda=\frac{1}{v}.
+\]
+These quantities are called the \emph{natural parameters} of the Gaussian. They arise directly from the exponential-family
+representation: $\eta$ is the coefficient of the linear sufficient statistic
+$u$, and $\lambda$ is the coefficient of the quadratic sufficient statistic
+$u^2$.
+
+The natural-parameter form is useful here because damping can be implemented by
+interpolating between the prior Gaussian and the undamped projected Gaussian in
+these coordinates, while remaining within the Gaussian family.
+
+Fix a step $k$, an item $i$, and a realized response category
+$r \in \mathcal Y_i$. Recall from Proposition~\ref{prop:rank_one_update}
+and Corollary~\ref{cor:ordinal_coeffs} that the exact one-step posterior update
+reduces to the standardized queried coordinate
+\[
+U_{k,i}
+:=
+\frac{a_i^\top(\theta-\mu_k)}{\sqrt{a_i^\top\Sigma_k a_i}}.
+\]
+Under the current Gaussian belief state $s_k=(\mu_k,\Sigma_k)$, this coordinate
+has prior distribution
+\[
+U_{k,i}\sim N(0,1).
+\]
+The undamped Gaussian projection after observing response category $r$ is
+\[
+U_{k,i}\mid(Y_i=r,s_k)
+\approx
+N\!\bigl(m_k^{(i,r)},\,v_k^{(i,r)}\bigr),
+\]
+where $m_k^{(i,r)}$ and $v_k^{(i,r)}$ are the scalar moments from
+Section~\ref{sec:gaussian_projection}.
+
+The prior $N(0,1)$ has natural parameters
+\[
+\eta_0=0,
+\qquad
+\lambda_0=1,
+\]
+while the undamped projected posterior
+$N\!\bigl(m_k^{(i,r)},v_k^{(i,r)}\bigr)$ has natural parameters
+\[
+\tilde{\eta}_k^{(i,r)}=\frac{m_k^{(i,r)}}{v_k^{(i,r)}},
+\qquad
+\tilde{\lambda}_k^{(i,r)}=\frac{1}{v_k^{(i,r)}}.
+\]
+
+Let $\epsilon_k^{(i,r)}\in[0,1]$ be the response-adaptive step size. We define
+the damped natural parameters by convex interpolation:
+\begin{align*}
+\bar{\lambda}_k^{(i,r)}
+&=
+(1-\epsilon_k^{(i,r)})\lambda_0
++
+\epsilon_k^{(i,r)}\tilde{\lambda}_k^{(i,r)},
+\label{eq:app_bar_lambda}
+\\
+\bar{\eta}_k^{(i,r)}
+&=
+(1-\epsilon_k^{(i,r)})\eta_0
++
+\epsilon_k^{(i,r)}\tilde{\eta}_k^{(i,r)}.
+\label{eq:app_bar_eta}
+\end{align*}
+Substituting the prior and posterior values yields
+\[
+\bar{\lambda}_k^{(i,r)}
+=
+(1-\epsilon_k^{(i,r)})
++
+\epsilon_k^{(i,r)}\frac{1}{v_k^{(i,r)}},
+\qquad
+\bar{\eta}_k^{(i,r)}
+=
+\epsilon_k^{(i,r)}\frac{m_k^{(i,r)}}{v_k^{(i,r)}}.
+\]
+
+To recover the usual mean-variance form, note that for a one-dimensional Gaussian
+the inverse relations are
+\[
+v=\frac{1}{\lambda},
+\qquad
+m=\frac{\eta}{\lambda}.
+\]
+Applying these identities to
+$\bigl(\bar{\eta}_k^{(i,r)},\bar{\lambda}_k^{(i,r)}\bigr)$ gives
+\[
+\bar{v}_k^{(i,r)}=\frac{1}{\bar{\lambda}_k^{(i,r)}},
+\qquad
+\bar{m}_k^{(i,r)}=\frac{\bar{\eta}_k^{(i,r)}}{\bar{\lambda}_k^{(i,r)}}.
+\]
+A short calculation then yields
+\begin{align*}
+\bar{v}_k^{(i,r)}
+&=
+\frac{v_k^{(i,r)}}
+     {v_k^{(i,r)}+\epsilon_k^{(i,r)}\bigl(1-v_k^{(i,r)}\bigr)},
+\label{eq:app_bar_v}
+\\
+\bar{m}_k^{(i,r)}
+&=
+\frac{\epsilon_k^{(i,r)}\,m_k^{(i,r)}}
+     {v_k^{(i,r)}+\epsilon_k^{(i,r)}\bigl(1-v_k^{(i,r)}\bigr)}.
+\label{eq:app_bar_m}
+\end{align*}
+
+Finally, substituting these damped scalar moments into the rank-one update from
+Proposition~\ref{prop:rank_one_update} gives the damped Gaussian projection
+\begin{align*}
+\bar{\mu}_{k+1}^{(i,r)}
+&=
+\mu_k
++
+\frac{\Sigma_k a_i}{\sqrt{a_i^\top\Sigma_k a_i}}\,
+\bar{m}_k^{(i,r)},
+\label{eq:app_damped_mu}
+\\
+\bar{\Sigma}_{k+1}^{(i,r)}
+&=
+\Sigma_k
++
+\bigl(\bar{v}_k^{(i,r)}-1\bigr)
+\frac{\Sigma_k a_i a_i^\top\Sigma_k}{a_i^\top\Sigma_k a_i}.
+\label{eq:app_damped_sigma}
+\end{align*}
+Thus, the damped rule gives a robust variant of the Gaussian inference layer. By reducing the update size when the realized response was unlikely under the current belief, it prevents overconfident contraction of the posterior covariance in the cases where the new observation conflicts most with prior expectations. 
+
+
+In addition, since $v_{k}^{(i,r)} \in \left(0,1\right]$ by Remark \ref{rem:vle1} and $\epsilon \in \left[ 0,1 \right]$, the denominator ${v_k^{(i,r)}+\epsilon_k^{(i,r)}\bigl(1-v_k^{(i,r)}\bigr)}$ is a convex combination of $v_{k}^{(i,r)}$ and 1. It therefore lies in $\left(0,1\right]$. Hence $\bar{v_{k}^{(i,r)}}$, and the positive definiteness argument of Appendix \ref{appendix:posdef} applies unchanged to $\bar{\Sigma}_{k+1}^{(i,r)}$.
+
+
+\end{document}
