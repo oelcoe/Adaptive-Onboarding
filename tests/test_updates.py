@@ -13,23 +13,24 @@ from src.updates import (
 )
 
 
-def make_test_belief() -> BeliefState:
+def make_test_belief() -> BeliefState: # test belief state
     return BeliefState(
         mu=np.array([1.0, 2.0]),
         Sigma=np.array([[2.0, 0.3], [0.3, 1.5]]),
     )
 
 
-def make_test_item() -> Item:
+def make_test_item() -> Item: # test item, fixed for the test
     return Item(
         item_id="q1",
         a=np.array([1.0, -1.0]),
         thresholds=np.array([-1.0, 0.5]),
-        sensitivity=0.0,
+        behavioral_sensitivity=0.0,
     )
 
 
 def test_projected_mean_variance_matches_manual_calculation() -> None:
+    # test that the projected mean and variance of the belief state coincides with the manual calculation
     belief = make_test_belief()
     item = make_test_item()
 
@@ -44,6 +45,7 @@ def test_projected_mean_variance_matches_manual_calculation() -> None:
 
 
 def test_normalized_update_direction_matches_manual_calculation() -> None:
+    # test that the normalized update direction coincides with the manual calculation
     belief = make_test_belief()
     item = make_test_item()
 
@@ -54,7 +56,7 @@ def test_normalized_update_direction_matches_manual_calculation() -> None:
     assert np.allclose(q, manual_q)
 
 
-@pytest.mark.parametrize(
+@pytest.mark.parametrize( # test for each response
     "response, expected_alpha_inf, expected_beta_inf",
     [
         (0, True, False),
@@ -62,11 +64,13 @@ def test_normalized_update_direction_matches_manual_calculation() -> None:
         (2, False, True),
     ],
 )
-def test_response_interval_bounds_edge_cases(
+def test_response_interval_bounds_edge_cases( # test for each response
     response: int,
     expected_alpha_inf: bool,
     expected_beta_inf: bool,
 ) -> None:
+    # test that the response interval bounds are correct for the edge cases, so response 0 has
+    # alpha -inf, beta finite, response 1 alpha and beta finite, and response 2 has alpha finite, beta +inf
     belief = make_test_belief()
     item = make_test_item()
 
@@ -79,6 +83,9 @@ def test_response_interval_bounds_edge_cases(
 
 
 def test_conditional_moments_are_well_formed() -> None:
+    # test that the conditional moments are well-formed for all responses
+    # mean should be finite, variance should be positive and finite, and probability of response 
+    # should be between 0 and 1, and v must reduce 
     belief = make_test_belief()
     item = make_test_item()
 
@@ -92,6 +99,7 @@ def test_conditional_moments_are_well_formed() -> None:
 
 
 def test_update_belief_preserves_symmetry_and_spd() -> None:
+    # test that the updated belief state is symmetric and positive definite = numerically stable
     belief = make_test_belief()
     item = make_test_item()
 
@@ -103,6 +111,8 @@ def test_update_belief_preserves_symmetry_and_spd() -> None:
 
 
 def test_update_reduces_variance_in_queried_direction() -> None:
+    # test that the updated belief state has less variance in the queried direction than the prior.
+    #A response to question i should reduce uncertainty in the direction that question measures.
     belief = make_test_belief()
     item = make_test_item()
 
@@ -114,6 +124,7 @@ def test_update_reduces_variance_in_queried_direction() -> None:
 
 
 def test_damped_update_is_less_aggressive_than_undamped_in_queried_direction() -> None:
+    # test that the damped update is less aggressive than the undamped update in the queried direction.
     belief = make_test_belief()
     item = make_test_item()
 
@@ -132,7 +143,37 @@ def test_damped_update_is_less_aggressive_than_undamped_in_queried_direction() -
     assert var_damped >= var_undamped - 1e-10
 
 
+def test_higher_behavioral_sensitivity_leads_to_less_contraction() -> None:
+    belief = make_test_belief()
+    low_sensitivity_item = Item(
+        item_id="q_low",
+        a=np.array([1.0, -1.0]),
+        thresholds=np.array([-1.0, 0.5]),
+        behavioral_sensitivity=0.0,
+    )
+    high_sensitivity_item = Item(
+        item_id="q_high",
+        a=np.array([1.0, -1.0]),
+        thresholds=np.array([-1.0, 0.5]),
+        behavioral_sensitivity=2.0,
+    )
+
+    updated_low = update_belief(belief, low_sensitivity_item, response=1)
+    updated_high = update_belief(belief, high_sensitivity_item, response=1)
+
+    var_before = float(low_sensitivity_item.a @ belief.Sigma @ low_sensitivity_item.a)
+    var_after_low = float(low_sensitivity_item.a @ updated_low.Sigma @ low_sensitivity_item.a)
+    var_after_high = float(high_sensitivity_item.a @ updated_high.Sigma @ high_sensitivity_item.a)
+
+    assert var_after_low <= var_before + 1e-10
+    assert var_after_high <= var_before + 1e-10
+    # Higher observation noise (from higher behavioral sensitivity) implies weaker update.
+    assert var_after_high >= var_after_low - 1e-10
+
+
 def test_invalid_response_raises() -> None:
+    # test that an invalid response raises a ValueError
+    # catches invalid or unclear responses from the user
     belief = make_test_belief()
     item = make_test_item()
 

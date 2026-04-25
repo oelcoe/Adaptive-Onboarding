@@ -1,0 +1,261 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Callable, Literal, Sequence
+
+import numpy as np
+
+from .belief import BeliefState
+from .item_bank import Item
+
+
+PolicyName = Literal[
+    "random",
+    "fixed",
+    "surrogate_unweighted",
+    "surrogate_weighted",
+]
+
+StayProbFn = Callable[[Item, int], float]
+
+
+@dataclass(frozen=True)
+class ScoredItem:
+    """Container for policy scores, useful for debugging and plotting."""
+
+    item: Item
+    score: float
+    projected_variance: float
+    stay_prob: float
+
+
+def projected_variance(belief: BeliefState, item: Item) -> float:
+    """
+    Return a^T Sigma a, the posterior variance in the item's measurement direction.
+    """
+    var = float(item.a @ belief.Sigma @ item.a)
+    return max(var, 0.0)
+
+
+def no_dropout_stay_prob(_: Item, __: int) -> float:
+    """
+    Baseline stay-probability model with no engagement risk.
+    """
+    return 1.0
+
+
+def make_linear_sensitivity_stay_prob(
+    gamma0: float,
+    gamma_step: float,
+    min_stay: float = 0.0,
+    max_stay: float = 1.0,
+) -> StayProbFn:
+    """
+    Return a simple stay-probability function of the form
+
+        p_stay(i, k) = clip(1 - gamma_k * behavioral_sensitivity_i, min_stay, max_stay)
+        gamma_k = max(gamma0 - gamma_step * k, 0)
+
+    where k is the current step index.
+
+    This follows the chapter's stylized model where sensitivity penalties are strongest
+    early and weaken over time.
+    """
+    if min_stay < 0.0 or max_stay > 1.0 or min_stay > max_stay:
+        raise ValueError("Require 0 <= min_stay <= max_stay <= 1.")
+    if gamma0 < 0.0 or gamma_step < 0.0:
+        raise ValueError("gamma0 and gamma_step must be nonnegative.")
+
+    def stay_prob(item: Item, step: int) -> float:
+        if step < 0:
+            raise ValueError("step must be nonnegative.")
+        gamma_k = max(gamma0 - gamma_step * step, 0.0)
+        p = 1.0 - gamma_k * item.behavioral_sensitivity
+        return float(np.clip(p, min_stay, max_stay))
+
+    return stay_prob
+
+
+def score_surrogate_unweighted(
+    belief: BeliefState,
+    item: Item,
+) -> float:
+    """
+    Unweighted online surrogate score:
+
+        log(1 + a^T Sigma a)
+
+    This captures how uncertain the current belief remains in the direction probed by the item.
+    """
+    var = projected_variance(belief, item)
+    return float(np.log1p(var))
+
+
+def score_surrogate_weighted(
+    belief: BeliefState,
+    item: Item,
+    step: int,
+    stay_prob_fn: StayProbFn,
+) -> float:
+    """
+    Weighted online surrogate score:
+
+        log(1 + p_stay(i, k) * a^T Sigma a)
+
+    This matches the chapter's engagement-aware surrogate:
+        Delta_sur(i | s_k) = log(1 + p_stay(i,k) * a^T Sigma_k a).
+    """
+    p_stay = float(stay_prob_fn(item, step))
+    if not np.isfinite(p_stay):
+        raise ValueError("stay_prob_fn must return a finite value.")
+    p_stay = float(np.clip(p_stay, 0.0, 1.0))
+    var = projected_variance(belief, item)
+    return float(np.log1p(p_stay * var))
+
+
+def _available_items(
+    item_bank: Sequence[Item],
+    already_asked: Sequence[str] | None,
+) -> list[Item]:
+    asked = set(already_asked or [])
+    return [item for item in item_bank if item.item_id not in asked]
+
+
+def score_bank(
+    belief: BeliefState,
+    item_bank: Sequence[Item],
+    step: int,
+    already_asked: Sequence[str] | None = None,
+    weighted: bool = True,
+    stay_prob_fn: StayProbFn | None = None,
+) -> list[ScoredItem]:
+    """
+    Score all currently available items and return them in descending score order.
+
+    For weighted=False, scores are computed as log(1 + a^T Sigma a).
+    For weighted=True, scores are computed as log(1 + p_stay(i,k) * a^T Sigma a).
+    """
+    candidates = _available_items(item_bank, already_asked)
+    if not candidates:
+        return []
+
+    if stay_prob_fn is None:
+        stay_prob_fn = no_dropout_stay_prob
+
+    scored: list[ScoredItem] = []
+    for item in candidates:
+        var = projected_variance(belief, item)
+        p_stay = float(np.clip(stay_prob_fn(item, step), 0.0, 1.0)) if weighted else 1.0
+        score = float(np.log1p(p_stay * var)) if weighted else float(np.log1p(var))
+        scored.append(
+            ScoredItem(
+                item=item,
+                score=score,
+                projected_variance=var,
+                stay_prob=p_stay,
+            )
+        )
+
+    # Stable, deterministic tie-breaking by original item order via Python's stable sort
+    scored.sort(key=lambda x: x.score, reverse=True)
+    return scored
+
+
+def _select_fixed(
+    item_bank: Sequence[Item],
+    already_asked: Sequence[str] | None = None,
+    fixed_order: Sequence[str] | None = None,
+) -> Item:
+    asked = set(already_asked or [])
+
+    if fixed_order is not None:
+        lookup = {item.item_id: item for item in item_bank}
+        for item_id in fixed_order:
+            if item_id not in asked:
+                if item_id not in lookup:
+                    raise ValueError(f"Unknown item_id in fixed_order: {item_id}")
+                return lookup[item_id]
+        raise ValueError("No available items remain in fixed_order.")
+
+    for item in item_bank:
+        if item.item_id not in asked:
+            return item
+
+    raise ValueError("No available items remain.")
+
+
+def _select_random(
+    item_bank: Sequence[Item],
+    already_asked: Sequence[str] | None = None,
+    rng: np.random.Generator | None = None,
+) -> Item:
+    candidates = _available_items(item_bank, already_asked)
+    if not candidates:
+        raise ValueError("No available items remain.")
+
+    if rng is None:
+        rng = np.random.default_rng()
+
+    idx = int(rng.integers(0, len(candidates)))
+    return candidates[idx]
+
+
+def select_next_item(
+    belief: BeliefState,
+    item_bank: Sequence[Item],
+    step: int,
+    strategy: PolicyName,
+    already_asked: Sequence[str] | None = None,
+    stay_prob_fn: StayProbFn | None = None,
+    fixed_order: Sequence[str] | None = None,
+    rng: np.random.Generator | None = None,
+) -> Item:
+    """
+    Select the next item according to the requested policy.
+
+    Supported strategies:
+        - "random"
+        - "fixed"
+        - "surrogate_unweighted"
+        - "surrogate_weighted"
+    """
+    if strategy == "random":
+        return _select_random(item_bank=item_bank, already_asked=already_asked, rng=rng)
+
+    if strategy == "fixed":
+        return _select_fixed(
+            item_bank=item_bank,
+            already_asked=already_asked,
+            fixed_order=fixed_order,
+        )
+
+    if strategy == "surrogate_unweighted":
+        scored = score_bank(
+            belief=belief,
+            item_bank=item_bank,
+            step=step,
+            already_asked=already_asked,
+            weighted=False,
+            stay_prob_fn=stay_prob_fn,
+        )
+        if not scored:
+            raise ValueError("No available items remain.")
+        return scored[0].item
+
+    if strategy == "surrogate_weighted":
+        if stay_prob_fn is None:
+            stay_prob_fn = no_dropout_stay_prob
+        scored = score_bank(
+            belief=belief,
+            item_bank=item_bank,
+            step=step,
+            already_asked=already_asked,
+            weighted=True,
+            stay_prob_fn=stay_prob_fn,
+        )
+        if not scored:
+            raise ValueError("No available items remain.")
+        return scored[0].item
+
+    raise ValueError(f"Unknown strategy: {strategy}")
+    

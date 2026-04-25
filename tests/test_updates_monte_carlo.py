@@ -29,7 +29,7 @@ def test_update_belief_matches_monte_carlo_conditional_posterior() -> None:
         item_id="mc_q1",
         a=np.array([1.0, -0.7]),
         thresholds=np.array([-0.6, 0.4]),
-        sensitivity=0.0,
+        behavioral_sensitivity=0.0,
     )
     response = 1  # interior category for a 3-category item, fixed for the test, we keep only the fake users who gave this response
 
@@ -40,7 +40,7 @@ def test_update_belief_matches_monte_carlo_conditional_posterior() -> None:
     # Monte Carlo draw from the prior - this is what makes the test slow
     n = 300_000
     theta = rng.multivariate_normal(mean=belief.mu, cov=belief.Sigma, size=n)
-    eps = rng.standard_normal(size=n) # generate observation noise
+    eps = np.sqrt(item.observation_noise_variance) * rng.standard_normal(size=n) # generate observation noise
     z = theta @ item.a + eps
 
     # Convert the chosen response (Zq) into a realized category interval
