@@ -15,9 +15,12 @@ def category_probabilities(
     """
     Predictive category probabilities under the ordinal probit / GRM model.
 
-    If theta ~ N(mu, Sigma) and Z = a^T theta + eps with eps ~ N(0, 1),
-    then marginally Z ~ N(a^T mu, a^T Sigma a + 1). The observed category
+    If theta ~ N(mu, Sigma) and Z = a^T theta + eps with eps ~ N(0, sigma_obs^2),
+    then marginally Z ~ N(a^T mu, a^T Sigma a + sigma_obs^2). The observed category
     is determined by thresholding Z.
+
+    Here sigma_obs^2 is linked to item.behavioral_sensitivity via
+    item.observation_noise_variance = base + scale * behavioral_sensitivity.
     """
     mu = belief.mu
     Sigma = belief.Sigma
@@ -28,7 +31,8 @@ def category_probabilities(
 
     mu_eta = float(a @ mu)
     var_eta = max(float(a @ Sigma @ a), 0.0)
-    denom = np.sqrt(var_eta + 1.0)
+    obs_noise_var = item.observation_noise_variance
+    denom = np.sqrt(var_eta + obs_noise_var)
 
     thr = item.thresholds
     cdf = stats.norm.cdf((thr - mu_eta) / denom)

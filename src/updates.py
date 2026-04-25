@@ -42,16 +42,19 @@ def response_interval_bounds(
     the Bayesian update becomes a truncated-normal conditioning problem. 
     This function computes the scalar quantities needed for that.
     Return (alpha, beta, gamma), where
-    gamma = sqrt(a^T Sigma a + 1), 
+    gamma = sqrt(a^T Sigma a + sigma_obs^2), 
     alpha = (tau_r   - a^T mu) / gamma,
     beta  = (tau_r+1 - a^T mu) / gamma.
 
     tau_r = -inf for response == 0, tau_r+1 = +inf for response == n_categories - 1.
+    sigma_obs^2 is linked to item.behavioral_sensitivity through
+    item.observation_noise_variance = base + scale * behavioral_sensitivity.
     """
     if not (0 <= response < item.n_categories):
         raise ValueError(f"response must be in {{0, ..., {item.n_categories - 1}}}.")
     mu_eta, var_eta = projected_mean_variance(belief, item)
-    gamma = float(np.sqrt(var_eta + 1.0)) # + 1 because of the observation noise.
+    obs_noise_var = item.observation_noise_variance
+    gamma = float(np.sqrt(var_eta + obs_noise_var))
     
     if response == 0:
         alpha = -np.inf # -inf because the lowest response category has no lower bound
@@ -108,7 +111,7 @@ def one_step_posterior_coefficients(
     Exact one-step posterior-moment coefficients (Prop. 1, Corollary 1).
 
     Returns (m, v, p_r) where:
-      rho = sqrt(a^T Sigma a) / sqrt(a^T Sigma a + 1)
+      rho = sqrt(a^T Sigma a) / sqrt(a^T Sigma a + sigma_obs^2)
       m   = rho * lambda          (E[U | response])
       v   = 1 - rho^2 + rho^2 * eta  (Var[U | response])
       p_r = predictive probability of the realized category
@@ -116,7 +119,7 @@ def one_step_posterior_coefficients(
     _, var_eta = projected_mean_variance(belief, item)
     alpha, beta, gamma = response_interval_bounds(belief, item, response)
 
-    rho = float(np.sqrt(var_eta)) / gamma  # s_{k,i} / gamma_{k,i}
+    rho = float(np.sqrt(var_eta)) / gamma  # s_{k,i} / sqrt(s_{k,i}^2 + sigma_obs^2)
 
     p_r, lam, eta = _truncated_normal_coefficients(alpha, beta)
 
