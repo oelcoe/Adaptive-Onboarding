@@ -17,7 +17,7 @@ def _is_spd(Sigma: NDArray[np.float64], rtol: float = 1e-9, atol: float = 1e-12)
 @dataclass(frozen=True)
 class BeliefState:
     """
-    Current Gaussian belief over the latent user state.
+    Current Gaussian belief over the latent user state. 
     mu: mean of the belief
     Sigma: covariance matrix of the belief
     """
