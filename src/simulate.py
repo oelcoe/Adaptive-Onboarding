@@ -19,7 +19,10 @@ from .updates import damped_update_belief, update_belief
 
 @dataclass
 class StepRecord:
-    """Everything that happened at a single step of an adaptive episode."""
+    """
+    Records everything that happened at a single step of an adaptive episode.
+    
+    """
 
     step: int
     item_id: str
