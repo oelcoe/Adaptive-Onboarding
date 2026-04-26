@@ -6,7 +6,6 @@ import numpy as np
 from numpy.typing import NDArray
 
 BASE_OBSERVATION_NOISE_VARIANCE = 1.0
-SENSITIVITY_TO_NOISE_SCALE = 1.0
 
 
 @dataclass(frozen=True)
@@ -17,6 +16,7 @@ class Item:
     a: NDArray[np.float64]
     thresholds: NDArray[np.float64]
     behavioral_sensitivity: float = 0.0
+    response_noise_variance: float = BASE_OBSERVATION_NOISE_VARIANCE
 
     def __post_init__(self) -> None:
         if not self.item_id or not self.item_id.strip():
@@ -38,6 +38,8 @@ class Item:
             raise ValueError("thresholds must be strictly increasing.")
         if not np.isfinite(self.behavioral_sensitivity) or self.behavioral_sensitivity < 0:
             raise ValueError("behavioral_sensitivity must be finite and nonnegative.")
+        if not np.isfinite(self.response_noise_variance) or self.response_noise_variance <= 0:
+            raise ValueError("response_noise_variance must be finite and strictly positive.")
 
         object.__setattr__(self, "a", a)
         object.__setattr__(self, "thresholds", thr)
@@ -58,11 +60,9 @@ class Item:
     def observation_noise_variance(self) -> float:
         """
         Observation-noise variance used by the ordinal-probit likelihood.
-        Linked to behavioral sensitivity through an affine map:
-            sigma_obs^2 = base + scale * behavioral_sensitivity
-        with default base=1.0 and scale=1.0.
+
+        This is intentionally separate from behavioral_sensitivity: sensitivity
+        models engagement/dropout costs, while response_noise_variance models
+        how reliable the answer is conditional on receiving one.
         """
-        return (
-            BASE_OBSERVATION_NOISE_VARIANCE
-            + SENSITIVITY_TO_NOISE_SCALE * float(self.behavioral_sensitivity)
-        )
+        return float(self.response_noise_variance)

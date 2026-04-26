@@ -19,8 +19,8 @@ def category_probabilities(
     then marginally Z ~ N(a^T mu, a^T Sigma a + sigma_obs^2). The observed category
     is determined by thresholding Z.
 
-    Here sigma_obs^2 is linked to item.behavioral_sensitivity via
-    item.observation_noise_variance = base + scale * behavioral_sensitivity.
+    Here sigma_obs^2 is item.response_noise_variance, separate from
+    item.behavioral_sensitivity.
     """
     mu = belief.mu
     Sigma = belief.Sigma

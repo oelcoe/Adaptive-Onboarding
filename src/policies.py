@@ -6,12 +6,15 @@ from typing import Callable, Literal, Sequence
 import numpy as np
 
 from .belief import BeliefState
+from .grm import category_probabilities
 from .item_bank import Item
+from .updates import one_step_posterior_coefficients
 
 
 PolicyName = Literal[
     "random",
     "fixed",
+    "myopic_exact",
     "surrogate_unweighted",
     "surrogate_weighted",
 ]
@@ -111,6 +114,78 @@ def score_surrogate_weighted(
     p_stay = float(np.clip(p_stay, 0.0, 1.0))
     var = projected_variance(belief, item)
     return float(np.log1p(p_stay * var))
+
+
+def score_myopic_exact(
+    belief: BeliefState,
+    item: Item,
+    step: int,
+    stay_prob_fn: StayProbFn,
+) -> float:
+    """
+    Exact one-step look-ahead score from Eq. (exact):
+
+        Delta(i | s_k) = p_stay(i,k) * sum_r p_r(i) * (-log v_r(i))
+
+    where p_r(i) is the predictive probability of category r and v_r(i) is the
+    one-step variance coefficient under response r.
+    """
+    p_stay = float(stay_prob_fn(item, step))
+    if not np.isfinite(p_stay):
+        raise ValueError("stay_prob_fn must return a finite value.")
+    p_stay = float(np.clip(p_stay, 0.0, 1.0))
+
+    probs = category_probabilities(belief, item)
+    expected_logdet_reduction = 0.0
+    for response, p_r in enumerate(probs):
+        _, v_r, _ = one_step_posterior_coefficients(belief, item, response)
+        v_r = float(np.clip(v_r, 1e-300, 1.0))
+        expected_logdet_reduction += float(p_r) * (-np.log(v_r))
+
+    return p_stay * expected_logdet_reduction
+
+
+def score_bank_myopic_exact(
+    belief: BeliefState,
+    item_bank: Sequence[Item],
+    step: int,
+    already_asked: Sequence[str] | None = None,
+    stay_prob_fn: StayProbFn | None = None,
+) -> list[ScoredItem]:
+    """
+    Score all currently available items using the exact one-step myopic objective:
+
+        Delta(i | s_k) = p_stay(i,k) * sum_r p_r(i) * (-log v_r(i))
+
+    Returns items sorted by descending score.
+    """
+    candidates = _available_items(item_bank, already_asked)
+    if not candidates:
+        return []
+
+    if stay_prob_fn is None:
+        stay_prob_fn = no_dropout_stay_prob
+
+    scored: list[ScoredItem] = []
+    for item in candidates:
+        p_stay = float(np.clip(stay_prob_fn(item, step), 0.0, 1.0))
+        score = score_myopic_exact(
+            belief=belief,
+            item=item,
+            step=step,
+            stay_prob_fn=stay_prob_fn,
+        )
+        scored.append(
+            ScoredItem(
+                item=item,
+                score=score,
+                projected_variance=projected_variance(belief, item),
+                stay_prob=p_stay,
+            )
+        )
+
+    scored.sort(key=lambda x: x.score, reverse=True)
+    return scored
 
 
 def _available_items(
@@ -216,6 +291,7 @@ def select_next_item(
     Supported strategies:
         - "random"
         - "fixed"
+        - "myopic_exact"
         - "surrogate_unweighted"
         - "surrogate_weighted"
     """
@@ -228,6 +304,18 @@ def select_next_item(
             already_asked=already_asked,
             fixed_order=fixed_order,
         )
+
+    if strategy == "myopic_exact":
+        scored = score_bank_myopic_exact(
+            belief=belief,
+            item_bank=item_bank,
+            step=step,
+            already_asked=already_asked,
+            stay_prob_fn=stay_prob_fn,
+        )
+        if not scored:
+            raise ValueError("No available items remain.")
+        return scored[0].item
 
     if strategy == "surrogate_unweighted":
         scored = score_bank(

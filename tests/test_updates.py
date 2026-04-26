@@ -143,7 +143,7 @@ def test_damped_update_is_less_aggressive_than_undamped_in_queried_direction() -
     assert var_damped >= var_undamped - 1e-10
 
 
-def test_higher_behavioral_sensitivity_leads_to_less_contraction() -> None:
+def test_behavioral_sensitivity_does_not_change_posterior_contraction() -> None:
     belief = make_test_belief()
     low_sensitivity_item = Item(
         item_id="q_low",
@@ -167,7 +167,34 @@ def test_higher_behavioral_sensitivity_leads_to_less_contraction() -> None:
 
     assert var_after_low <= var_before + 1e-10
     assert var_after_high <= var_before + 1e-10
-    # Higher observation noise (from higher behavioral sensitivity) implies weaker update.
+    assert np.isclose(var_after_high, var_after_low)
+
+
+def test_higher_response_noise_leads_to_less_contraction() -> None:
+    belief = make_test_belief()
+    low_noise_item = Item(
+        item_id="q_low",
+        a=np.array([1.0, -1.0]),
+        thresholds=np.array([-1.0, 0.5]),
+        response_noise_variance=1.0,
+    )
+    high_noise_item = Item(
+        item_id="q_high",
+        a=np.array([1.0, -1.0]),
+        thresholds=np.array([-1.0, 0.5]),
+        response_noise_variance=3.0,
+    )
+
+    updated_low = update_belief(belief, low_noise_item, response=1)
+    updated_high = update_belief(belief, high_noise_item, response=1)
+
+    var_before = float(low_noise_item.a @ belief.Sigma @ low_noise_item.a)
+    var_after_low = float(low_noise_item.a @ updated_low.Sigma @ low_noise_item.a)
+    var_after_high = float(high_noise_item.a @ updated_high.Sigma @ high_noise_item.a)
+
+    assert var_after_low <= var_before + 1e-10
+    assert var_after_high <= var_before + 1e-10
+    # Higher response noise implies weaker update.
     assert var_after_high >= var_after_low - 1e-10
 
 
