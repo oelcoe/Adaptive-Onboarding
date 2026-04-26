@@ -59,21 +59,16 @@ class EpisodeResult:
 
 def _effective_noise_variance(item: Item, sensitivity_noise_scale: float) -> float:
     """
-    Compute the response noise variance used by the generative model at simulation time.
-
-    When sensitivity_noise_scale > 0 and the item is flagged as sensitive, the
-    item's base observation_noise_variance is inflated proportionally to the item's
-    sensitivity_level:
+    Compute the response noise variance for a sensitive item at simulation time.
 
         effective_variance = base * (1 + sensitivity_noise_scale * sensitivity_level)
 
     For non-sensitive items or when sensitivity_noise_scale == 0, the item's stored
     observation_noise_variance (default 1.0) is returned unchanged.
 
-    Note: the belief update in grm.py / updates.py always uses item.observation_noise_variance
-    (the stored value). This function only affects sample_response(), so inflated noise
-    represents model misspecification from the system's perspective — it does not know
-    that sensitive items are noisier.
+    This value is used in simulate_episode to create effective copies of items via
+    dataclasses.replace. Both sample_response and update_belief then read the same
+    inflated value from the effective item — the model is fully consistent.
     """
     if not item.is_sensitive or sensitivity_noise_scale == 0.0:
         return item.observation_noise_variance
@@ -101,6 +96,12 @@ def sample_response(
     This is the *environment* oracle. It is intentionally separate from
     category_probabilities(), which computes probabilities under the *belief*.
     """
+    theta_true = np.asarray(theta_true, dtype=float).reshape(-1)
+    if theta_true.shape[0] != item.dim:
+        raise ValueError(
+            f"theta_true has dimension {theta_true.shape[0]} but item "
+            f"'{item.item_id}' expects dimension {item.dim}."
+        )
     eps = rng.normal(0.0, np.sqrt(item.observation_noise_variance))
     z = float(item.a @ theta_true) + eps
 

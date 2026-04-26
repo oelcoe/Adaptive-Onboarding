@@ -47,8 +47,8 @@ def response_interval_bounds(
     beta  = (tau_r+1 - a^T mu) / gamma.
 
     tau_r = -inf for response == 0, tau_r+1 = +inf for response == n_categories - 1.
-    sigma_obs^2 is item.response_noise_variance, separate from
-    item.behavioral_sensitivity.
+    sigma_obs^2 is item.observation_noise_variance (default 1.0, inflated for
+    sensitive items when simulate_episode is called with sensitivity_noise_scale > 0).
     """
     if not (0 <= response < item.n_categories):
         raise ValueError(f"response must be in {{0, ..., {item.n_categories - 1}}}.")
