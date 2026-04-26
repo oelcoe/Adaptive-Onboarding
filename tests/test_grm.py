@@ -17,7 +17,6 @@ def test_category_probabilities_sum_to_one_and_nonnegative() -> None:
         item_id="q1",
         a=np.array([1.0, 0.5]),
         thresholds=np.array([-0.5, 0.0, 0.8]),
-        behavioral_sensitivity=1.0, # fixed for the test
     )
 
     p = category_probabilities(belief, item)
@@ -37,7 +36,6 @@ def test_binary_item_probabilities_valid() -> None:
         item_id="b",
         a=np.array([1.0]),
         thresholds=np.array([0.0]),
-        behavioral_sensitivity=0.0,
     )
 
     p = category_probabilities(belief, item)
@@ -55,7 +53,6 @@ def test_binary_item_higher_projected_mean_increases_upper_category_probability(
         item_id="b",
         a=np.array([1.0]),
         thresholds=np.array([0.0]),
-        behavioral_sensitivity=0.0,
     )
 
     belief_low = BeliefState(mu=np.array([-1.0]), Sigma=Sigma)
@@ -68,29 +65,36 @@ def test_binary_item_higher_projected_mean_increases_upper_category_probability(
     assert p_high[0] < p_low[0]
 
 
-def test_behavioral_sensitivity_does_not_change_observation_noise() -> None:
+def test_sensitivity_level_does_not_change_category_probabilities() -> None:
+    """
+    sensitivity_level is metadata for the dropout model. It must not affect
+    category_probabilities — two items that differ only in sensitivity_level
+    must produce identical predictive distributions.
+    """
     belief = BeliefState(
         mu=np.array([0.6]),
         Sigma=np.array([[0.5]]),
     )
-    low_sensitivity_item = Item(
+    low_level_item = Item(
         item_id="b_low",
         a=np.array([1.0]),
         thresholds=np.array([0.0]),
-        behavioral_sensitivity=0.0,
+        is_sensitive=True,
+        sensitivity_level=0.0,
     )
-    high_sensitivity_item = Item(
+    high_level_item = Item(
         item_id="b_high",
         a=np.array([1.0]),
         thresholds=np.array([0.0]),
-        behavioral_sensitivity=2.0,
+        is_sensitive=True,
+        sensitivity_level=1.0,
     )
 
-    p_low_noise = category_probabilities(belief, low_sensitivity_item)
-    p_high_noise = category_probabilities(belief, high_sensitivity_item)
+    p_low  = category_probabilities(belief, low_level_item)
+    p_high = category_probabilities(belief, high_level_item)
 
-    assert high_sensitivity_item.observation_noise_variance == low_sensitivity_item.observation_noise_variance
-    assert np.allclose(p_high_noise, p_low_noise)
+    assert high_level_item.observation_noise_variance == low_level_item.observation_noise_variance
+    assert np.allclose(p_high, p_low)
 
 
 def test_higher_response_noise_flattens_category_probabilities() -> None:

@@ -20,12 +20,11 @@ def make_test_belief() -> BeliefState: # test belief state
     )
 
 
-def make_test_item() -> Item: # test item, fixed for the test
+def make_test_item() -> Item:
     return Item(
         item_id="q1",
         a=np.array([1.0, -1.0]),
         thresholds=np.array([-1.0, 0.5]),
-        behavioral_sensitivity=0.0,
     )
 
 
@@ -143,29 +142,35 @@ def test_damped_update_is_less_aggressive_than_undamped_in_queried_direction() -
     assert var_damped >= var_undamped - 1e-10
 
 
-def test_behavioral_sensitivity_does_not_change_posterior_contraction() -> None:
+def test_sensitivity_level_does_not_change_posterior_contraction() -> None:
+    """
+    sensitivity_level controls dropout risk, not inference. Two items that
+    differ only in sensitivity_level must produce identical posterior updates.
+    """
     belief = make_test_belief()
-    low_sensitivity_item = Item(
+    low_level_item = Item(
         item_id="q_low",
         a=np.array([1.0, -1.0]),
         thresholds=np.array([-1.0, 0.5]),
-        behavioral_sensitivity=0.0,
+        is_sensitive=True,
+        sensitivity_level=0.0,
     )
-    high_sensitivity_item = Item(
+    high_level_item = Item(
         item_id="q_high",
         a=np.array([1.0, -1.0]),
         thresholds=np.array([-1.0, 0.5]),
-        behavioral_sensitivity=2.0,
+        is_sensitive=True,
+        sensitivity_level=1.0,
     )
 
-    updated_low = update_belief(belief, low_sensitivity_item, response=1)
-    updated_high = update_belief(belief, high_sensitivity_item, response=1)
+    updated_low  = update_belief(belief, low_level_item,  response=1)
+    updated_high = update_belief(belief, high_level_item, response=1)
 
-    var_before = float(low_sensitivity_item.a @ belief.Sigma @ low_sensitivity_item.a)
-    var_after_low = float(low_sensitivity_item.a @ updated_low.Sigma @ low_sensitivity_item.a)
-    var_after_high = float(high_sensitivity_item.a @ updated_high.Sigma @ high_sensitivity_item.a)
+    var_before    = float(low_level_item.a @ belief.Sigma      @ low_level_item.a)
+    var_after_low = float(low_level_item.a @ updated_low.Sigma  @ low_level_item.a)
+    var_after_high= float(high_level_item.a @ updated_high.Sigma @ high_level_item.a)
 
-    assert var_after_low <= var_before + 1e-10
+    assert var_after_low  <= var_before + 1e-10
     assert var_after_high <= var_before + 1e-10
     assert np.isclose(var_after_high, var_after_low)
 

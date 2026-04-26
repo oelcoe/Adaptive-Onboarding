@@ -29,7 +29,6 @@ def test_update_belief_matches_monte_carlo_conditional_posterior() -> None:
         item_id="mc_q1",
         a=np.array([1.0, -0.7]),
         thresholds=np.array([-0.6, 0.4]),
-        behavioral_sensitivity=0.0,
     )
     response = 1  # interior category for a 3-category item, fixed for the test, we keep only the fake users who gave this response
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, replace as _dataclass_replace
 from typing import Sequence
 
 import numpy as np
@@ -57,6 +57,29 @@ class EpisodeResult:
 # ---------------------------------------------------------------------------
 
 
+def _effective_noise_variance(item: Item, sensitivity_noise_scale: float) -> float:
+    """
+    Compute the response noise variance used by the generative model at simulation time.
+
+    When sensitivity_noise_scale > 0 and the item is flagged as sensitive, the
+    item's base observation_noise_variance is inflated proportionally to the item's
+    sensitivity_level:
+
+        effective_variance = base * (1 + sensitivity_noise_scale * sensitivity_level)
+
+    For non-sensitive items or when sensitivity_noise_scale == 0, the item's stored
+    observation_noise_variance (default 1.0) is returned unchanged.
+
+    Note: the belief update in grm.py / updates.py always uses item.observation_noise_variance
+    (the stored value). This function only affects sample_response(), so inflated noise
+    represents model misspecification from the system's perspective — it does not know
+    that sensitive items are noisier.
+    """
+    if not item.is_sensitive or sensitivity_noise_scale == 0.0:
+        return item.observation_noise_variance
+    return item.observation_noise_variance * (1.0 + sensitivity_noise_scale * item.sensitivity_level)
+
+
 def sample_response(
     theta_true: NDArray[np.float64],
     item: Item,
@@ -66,9 +89,14 @@ def sample_response(
     Draw a single ordinal response from the true user latent state.
 
     The generative model is:
-        Z = a^T theta_true + eps,   eps ~ N(0, response_noise_variance)
+        Z = a^T theta_true + eps,   eps ~ N(0, item.observation_noise_variance)
     Response category r is returned when thresholds[r-1] <= Z < thresholds[r],
     with boundary conventions thresholds[-1] = -inf and thresholds[K] = +inf.
+
+    When sensitivity_noise_scale > 0 is passed to simulate_episode, effective
+    copies of items are created with inflated response_noise_variance before the
+    episode loop begins. Both this function and the belief update therefore see
+    the same noise level — the model is fully consistent.
 
     This is the *environment* oracle. It is intentionally separate from
     category_probabilities(), which computes probabilities under the *belief*.
@@ -97,6 +125,7 @@ def simulate_episode(
     rng: np.random.Generator | None = None,
     use_damped_update: bool = False,
     fixed_order: Sequence[str] | None = None,
+    sensitivity_noise_scale: float = 0.0,
 ) -> EpisodeResult:
     """
     Simulate one adaptive questionnaire episode under a given policy.
@@ -128,6 +157,41 @@ def simulate_episode(
     EpisodeResult
         Full record of the episode including every StepRecord.
     """
+    theta_true = np.asarray(theta_true, dtype=float).reshape(-1)
+    d = prior_belief.dim
+
+    if horizon < 1:
+        raise ValueError(f"horizon must be at least 1, got {horizon}.")
+    if sensitivity_noise_scale < 0.0:
+        raise ValueError(
+            f"sensitivity_noise_scale must be nonnegative, got {sensitivity_noise_scale}."
+        )
+
+    if theta_true.shape[0] != d:
+        raise ValueError(
+            f"theta_true has dimension {theta_true.shape[0]} but prior belief "
+            f"has dimension {d}. They must match."
+        )
+
+    mismatched = [(item.item_id, item.dim) for item in item_bank if item.dim != d]
+    if mismatched:
+        raise ValueError(
+            f"All items must have the same dimension as the prior belief (d={d}). "
+            f"Mismatched items: {mismatched}."
+        )
+
+    # Build effective item bank: inflate response_noise_variance for sensitive items
+    # so that both the generative model (sample_response) and the inference model
+    # (update_belief) see the same noise. This keeps the model fully consistent.
+    if sensitivity_noise_scale > 0.0:
+        item_bank = [
+            _dataclass_replace(
+                item,
+                response_noise_variance=_effective_noise_variance(item, sensitivity_noise_scale),
+            )
+            for item in item_bank
+        ]
+
     if rng is None:
         rng = np.random.default_rng()
 
@@ -141,19 +205,29 @@ def simulate_episode(
 
     for step in range(horizon):
         # ----- a. choose item -----
-        item = select_next_item(
-            belief=belief,
-            item_bank=item_bank,
-            step=step,
-            strategy=strategy,
-            already_asked=asked_ids,
-            stay_prob_fn=stay_prob_fn,
-            fixed_order=fixed_order,
-            rng=rng,
-        )
+        try:
+            item = select_next_item(
+                belief=belief,
+                item_bank=item_bank,
+                step=step,
+                strategy=strategy,
+                already_asked=asked_ids,
+                stay_prob_fn=stay_prob_fn,
+                fixed_order=fixed_order,
+                rng=rng,
+            )
+        except ValueError:
+            # Bank exhausted (horizon > bank size, or fixed_order fully consumed).
+            break
 
         # ----- b. compute stay probability -----
-        p_stay = float(np.clip(stay_prob_fn(item, step), 0.0, 1.0))
+        raw_stay = stay_prob_fn(item, step)
+        if not np.isfinite(raw_stay):
+            raise ValueError(
+                f"stay_prob_fn returned non-finite value {raw_stay!r} "
+                f"for item {item.item_id!r} at step {step}."
+            )
+        p_stay = float(np.clip(raw_stay, 0.0, 1.0))
 
         # ----- c. sample dropout -----
         dropped_out = bool(rng.random() > p_stay)
@@ -228,6 +302,7 @@ def simulate_population(
     rng: np.random.Generator | None = None,
     use_damped_update: bool = False,
     fixed_order: Sequence[str] | None = None,
+    sensitivity_noise_scale: float = 0.0,
 ) -> list[EpisodeResult]:
     """
     Simulate one episode per row of theta_trues and return all results.
@@ -266,6 +341,7 @@ def simulate_population(
             rng=rng,
             use_damped_update=use_damped_update,
             fixed_order=fixed_order,
+            sensitivity_noise_scale=sensitivity_noise_scale,
         )
         results.append(result)
 

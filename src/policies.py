@@ -47,33 +47,66 @@ def no_dropout_stay_prob(_: Item, __: int) -> float:
     return 1.0
 
 
-def make_linear_sensitivity_stay_prob(
+
+def make_sensitive_constant_stay_prob(
+    p_stay_sensitive: float,
+    p_stay_normal: float = 1.0,
+) -> StayProbFn:
+    """
+    Return a stay-probability function based on the binary is_sensitive flag.
+
+    Sensitive items (item.is_sensitive == True) receive a fixed constant stay
+    probability p_stay_sensitive, regardless of step.  Non-sensitive items
+    receive p_stay_normal (default 1.0 = no dropout risk).
+
+    This is the pure binary model: the flag alone determines dropout risk.
+    Use make_sensitive_level_stay_prob when you need the continuous level.
+    """
+    if not (0.0 <= p_stay_sensitive <= 1.0):
+        raise ValueError("p_stay_sensitive must be in [0, 1].")
+    if not (0.0 <= p_stay_normal <= 1.0):
+        raise ValueError("p_stay_normal must be in [0, 1].")
+
+    def stay_prob(item: Item, _step: int) -> float:
+        return p_stay_sensitive if item.is_sensitive else p_stay_normal
+
+    return stay_prob
+
+
+def make_sensitive_level_stay_prob(
     gamma0: float,
-    gamma_step: float,
+    gamma_step: float = 0.0,
     min_stay: float = 0.0,
     max_stay: float = 1.0,
 ) -> StayProbFn:
     """
-    Return a simple stay-probability function of the form
+    Return a stay-probability function that uses both the binary is_sensitive flag
+    and the continuous sensitivity_level.
 
-        p_stay(i, k) = clip(1 - gamma_k * behavioral_sensitivity_i, min_stay, max_stay)
-        gamma_k = max(gamma0 - gamma_step * k, 0)
+    For non-sensitive items:
+        p_stay = max_stay   (no dropout risk by default)
 
-    where k is the current step index.
+    For sensitive items:
+        gamma_k  = max(gamma0 - gamma_step * step, 0)
+        p_stay   = clip(1 - gamma_k * item.sensitivity_level, min_stay, max_stay)
 
-    This follows the chapter's stylized model where sensitivity penalties are strongest
-    early and weaken over time.
+    The penalty is strongest at step 0 and weakens by gamma_step each step, reaching
+    zero once gamma_k hits 0.  Setting gamma_step=0 gives a time-constant penalty.
+    An item with sensitivity_level=0 has no dropout risk even when is_sensitive=True;
+    use make_sensitive_constant_stay_prob for pure binary dropout.
     """
-    if min_stay < 0.0 or max_stay > 1.0 or min_stay > max_stay:
-        raise ValueError("Require 0 <= min_stay <= max_stay <= 1.")
     if gamma0 < 0.0 or gamma_step < 0.0:
         raise ValueError("gamma0 and gamma_step must be nonnegative.")
+    if min_stay < 0.0 or max_stay > 1.0 or min_stay > max_stay:
+        raise ValueError("Require 0 <= min_stay <= max_stay <= 1.")
 
     def stay_prob(item: Item, step: int) -> float:
         if step < 0:
             raise ValueError("step must be nonnegative.")
+        if not item.is_sensitive:
+            return max_stay
         gamma_k = max(gamma0 - gamma_step * step, 0.0)
-        p = 1.0 - gamma_k * item.behavioral_sensitivity
+        p = 1.0 - gamma_k * item.sensitivity_level
         return float(np.clip(p, min_stay, max_stay))
 
     return stay_prob

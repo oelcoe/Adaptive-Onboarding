@@ -15,8 +15,9 @@ class Item:
     item_id: str
     a: NDArray[np.float64]
     thresholds: NDArray[np.float64]
-    behavioral_sensitivity: float = 0.0
     response_noise_variance: float = BASE_OBSERVATION_NOISE_VARIANCE
+    is_sensitive: bool = False
+    sensitivity_level: float = 0.0
 
     def __post_init__(self) -> None:
         if not self.item_id or not self.item_id.strip():
@@ -36,10 +37,10 @@ class Item:
             raise ValueError("a and thresholds must be finite.")
         if np.any(np.diff(thr) <= 0):
             raise ValueError("thresholds must be strictly increasing.")
-        if not np.isfinite(self.behavioral_sensitivity) or self.behavioral_sensitivity < 0:
-            raise ValueError("behavioral_sensitivity must be finite and nonnegative.")
         if not np.isfinite(self.response_noise_variance) or self.response_noise_variance <= 0:
             raise ValueError("response_noise_variance must be finite and strictly positive.")
+        if not np.isfinite(self.sensitivity_level) or self.sensitivity_level < 0:
+            raise ValueError("sensitivity_level must be finite and nonnegative.")
 
         object.__setattr__(self, "a", a)
         object.__setattr__(self, "thresholds", thr)
@@ -61,8 +62,10 @@ class Item:
         """
         Observation-noise variance used by the ordinal-probit likelihood.
 
-        This is intentionally separate from behavioral_sensitivity: sensitivity
-        models engagement/dropout costs, while response_noise_variance models
-        how reliable the answer is conditional on receiving one.
+        Defaults to 1.0. At simulation time, simulate_episode inflates this
+        for sensitive items when sensitivity_noise_scale > 0 by creating
+        effective copies with adjusted response_noise_variance. Both the
+        generative model (sample_response) and the inference model
+        (update_belief) then see the same inflated value.
         """
         return float(self.response_noise_variance)
