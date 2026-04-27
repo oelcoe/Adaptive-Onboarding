@@ -2,6 +2,6 @@
 Adaptive onboarding as a sensitivity-aware sequential decision-making problem.
 
 ## Research Reference
-The theoretical backbone for the ordinal probit / GRM implementation lives in `docs/research/theory.tex` (source) and optionally `docs/research/theory.pdf` (compiled paper).
+The theoretical backbone lives in `docs/research/theory.tex`.
 
 See `docs/research/README.md` for what to include.
