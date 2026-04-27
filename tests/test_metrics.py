@@ -10,7 +10,7 @@ _logdet (internal helper)
 
 EpisodeMetrics / episode_metrics
   4.  no-dropout episode: logdet_reduction > 0
-  5.  zero-step episode (immediate dropout): total_logdet_reduction == 0
+  5.  immediate-dropout episode: total_logdet_reduction == 0
   6.  single-step episode: reduction equals before - after
   7.  initial_logdet equals log det of first step's Sigma_before
   8.  final_logdet   equals log det of final_belief.Sigma
@@ -18,18 +18,32 @@ EpisodeMetrics / episode_metrics
   10. dropped_out mirrors EpisodeResult.terminated_by_dropout
   11. logdet_reduction == initial_logdet - final_logdet (identity check)
   12. more steps → non-negative cumulative reduction
+  13. final_d_error equals det(Sigma)^(1/d)
+  14. final_d_error decreases after answering questions
+  15. sensitive-asked metrics are zero without item metadata
+  16. sensitive-asked metrics use item-bank metadata when provided
 
 PolicyMetrics / aggregate_policy_metrics
-  13. single episode: dropout_count and rate consistent
-  14. all-dropout population: dropout_rate == 1.0
-  15. no-dropout population:  dropout_rate == 0.0
-  16. mean_n_answered is the arithmetic mean of per-episode n_answered
-  17. mean_n_asked    is the arithmetic mean of per-episode n_asked
-  18. mean_final_logdet matches manual computation
-  19. mean_logdet_reduction matches manual computation
-  20. empty results raises ValueError
-  21. policy_name is preserved in output
-  22. n_episodes equals len(results)
+  17. single episode: dropout_count and rate consistent
+  18. all-dropout population: dropout_rate == 1.0
+  19. no-dropout population:  dropout_rate == 0.0
+  20. mean_n_answered is the arithmetic mean of per-episode n_answered
+  21. mean_n_asked    is the arithmetic mean of per-episode n_asked
+  22. mean_final_logdet matches manual computation
+  23. mean_logdet_reduction matches manual computation
+  24. mean_final_d_error matches manual computation
+  25. sensitivity burden means match manual computation
+  26. empty results raises ValueError
+  27. policy_name is preserved in output
+  28. n_episodes equals len(results)
+
+mean_estimation_error
+  29. zero error when mu_final == theta_true
+  30. known distance on a trivial case
+  31. empty results raise ValueError
+  32. mismatched lengths raise ValueError
+  33. mismatched dimensions raise ValueError
+  34. population-level smoke test: error decreases with more answered questions
 """
 
 from __future__ import annotations
@@ -40,11 +54,10 @@ import pytest
 from src.belief import BeliefState
 from src.item_bank import Item
 from src.metrics import (
-    EpisodeMetrics,
-    PolicyMetrics,
     _logdet,
     aggregate_policy_metrics,
     episode_metrics,
+    mean_estimation_error,
 )
 from src.policies import (
     make_sensitive_constant_stay_prob,
@@ -52,7 +65,6 @@ from src.policies import (
 )
 from src.simulate import (
     EpisodeResult,
-    StepRecord,
     simulate_episode,
     simulate_population,
 )
@@ -143,7 +155,7 @@ class TestEpisodeMetrics:
         em = episode_metrics(_run_no_dropout(horizon=4))
         assert em.total_logdet_reduction > 0.0
 
-    def test_zero_step_episode_has_zero_reduction(self) -> None:
+    def test_immediate_dropout_episode_has_zero_reduction(self) -> None:
         ep = _run_immediate_dropout()
         assert ep.n_answered == 0
         em = episode_metrics(ep)
@@ -189,6 +201,42 @@ class TestEpisodeMetrics:
         assert em.total_logdet_reduction == pytest.approx(
             em.initial_logdet - em.final_logdet
         )
+
+    def test_final_d_error_equals_det_to_one_over_d(self) -> None:
+        ep = _run_no_dropout(horizon=4)
+        em = episode_metrics(ep)
+        d        = ep.final_belief.dim
+        expected = float(np.linalg.det(ep.final_belief.Sigma) ** (1.0 / d))
+        assert em.final_d_error == pytest.approx(expected)
+
+    def test_final_d_error_decreases_after_answering(self) -> None:
+        prior = make_prior()
+        ep    = _run_no_dropout(horizon=4)
+        d     = prior.dim
+        prior_d_error = float(np.linalg.det(prior.Sigma) ** (1.0 / d))
+        assert episode_metrics(ep).final_d_error < prior_d_error
+
+    def test_sensitivity_metrics_zero_without_item_bank(self) -> None:
+        ep = _run_no_dropout(horizon=4)
+        em = episode_metrics(ep)
+        assert em.n_sensitive_asked == 0
+        assert em.sensitivity_level_asked == pytest.approx(0.0)
+
+    def test_sensitivity_metrics_use_item_bank_metadata(self) -> None:
+        items = make_items()
+        ep = simulate_episode(
+            theta_true=THETA_TRUE,
+            prior_belief=make_prior(),
+            item_bank=items,
+            strategy="fixed",
+            horizon=3,
+            stay_prob_fn=no_dropout_stay_prob,
+            rng=np.random.default_rng(42),
+        )
+        em = episode_metrics(ep, item_bank=items)
+        assert ep.asked_item_ids == ["q1", "q2", "q3"]
+        assert em.n_sensitive_asked == 1
+        assert em.sensitivity_level_asked == pytest.approx(0.4)
 
     def test_more_steps_do_not_decrease_reduction(self) -> None:
         """
@@ -243,6 +291,10 @@ class TestAggregatePolicyMetrics:
         assert pm.mean_n_asked                == pytest.approx(em.n_asked)
         assert pm.mean_final_logdet           == pytest.approx(em.final_logdet)
         assert pm.mean_logdet_reduction       == pytest.approx(em.total_logdet_reduction)
+        assert pm.mean_sensitive_asked        == pytest.approx(em.n_sensitive_asked)
+        assert pm.mean_sensitivity_level_asked == pytest.approx(
+            em.sensitivity_level_asked
+        )
 
     def test_all_dropout_population(self) -> None:
         ep_drop = _run_immediate_dropout()
@@ -280,6 +332,40 @@ class TestAggregatePolicyMetrics:
         expected = np.mean([episode_metrics(r).total_logdet_reduction for r in results])
         assert pm.mean_logdet_reduction == pytest.approx(float(expected))
 
+    def test_mean_final_d_error_matches_manual(self) -> None:
+        results  = [_run_no_dropout(horizon=h) for h in [2, 3, 4]]
+        pm       = aggregate_policy_metrics(results, policy_name="x")
+        expected = np.mean([episode_metrics(r).final_d_error for r in results])
+        assert pm.mean_final_d_error == pytest.approx(float(expected))
+
+    def test_sensitivity_burden_means_match_manual(self) -> None:
+        items = make_items()
+        results = [
+            simulate_episode(
+                theta_true=THETA_TRUE,
+                prior_belief=make_prior(),
+                item_bank=items,
+                strategy="fixed",
+                horizon=h,
+                stay_prob_fn=no_dropout_stay_prob,
+                rng=np.random.default_rng(42),
+            )
+            for h in [1, 2, 3]
+        ]
+        pm = aggregate_policy_metrics(results, policy_name="fixed", item_bank=items)
+        expected_counts = [
+            episode_metrics(r, item_bank=items).n_sensitive_asked
+            for r in results
+        ]
+        expected_levels = [
+            episode_metrics(r, item_bank=items).sensitivity_level_asked
+            for r in results
+        ]
+        assert pm.mean_sensitive_asked == pytest.approx(float(np.mean(expected_counts)))
+        assert pm.mean_sensitivity_level_asked == pytest.approx(
+            float(np.mean(expected_levels))
+        )
+
     def test_population_via_simulate_population(self) -> None:
         """End-to-end smoke test using simulate_population output."""
         thetas = np.random.default_rng(0).standard_normal((20, 2))
@@ -297,3 +383,69 @@ class TestAggregatePolicyMetrics:
         assert pm.dropout_rate      == pytest.approx(0.0)
         assert pm.mean_n_answered   == pytest.approx(3.0)
         assert pm.mean_logdet_reduction > 0.0
+        assert pm.mean_final_d_error > 0.0
+
+
+# ---------------------------------------------------------------------------
+# mean_estimation_error
+# ---------------------------------------------------------------------------
+
+
+class TestMeanEstimationError:
+    def test_zero_error_when_mu_equals_theta(self) -> None:
+        """If the posterior mean exactly equals theta_true, error is zero."""
+        theta  = np.array([1.0, 2.0])
+        result = EpisodeResult(
+            steps=[],
+            final_belief=BeliefState(mu=theta, Sigma=np.eye(2)),
+            terminated_by_dropout=False,
+            asked_item_ids=[],
+        )
+        assert mean_estimation_error([result], np.array([theta])) == pytest.approx(0.0)
+
+    def test_known_distance(self) -> None:
+        """Single episode with known mu and theta_true produces exact L2 distance."""
+        mu    = np.array([0.0, 0.0])
+        theta = np.array([3.0, 4.0])   # ||theta - mu|| == 5
+        result = EpisodeResult(
+            steps=[],
+            final_belief=BeliefState(mu=mu, Sigma=np.eye(2)),
+            terminated_by_dropout=False,
+            asked_item_ids=[],
+        )
+        assert mean_estimation_error([result], np.array([theta])) == pytest.approx(5.0)
+
+    def test_mismatched_lengths_raise(self) -> None:
+        results = [_run_no_dropout(horizon=2)] * 3
+        thetas  = np.random.default_rng(0).standard_normal((5, 2))
+        with pytest.raises(ValueError, match="3"):
+            mean_estimation_error(results, thetas)
+
+    def test_empty_results_raise(self) -> None:
+        with pytest.raises(ValueError, match="at least one"):
+            mean_estimation_error([], np.empty((0, 2)))
+
+    def test_mismatched_dimensions_raise(self) -> None:
+        result = _run_no_dropout(horizon=2)
+        theta = np.zeros((1, 3))
+        with pytest.raises(ValueError, match="dimension"):
+            mean_estimation_error([result], theta)
+
+    def test_more_answers_reduce_estimation_error(self) -> None:
+        """
+        With more questions answered the posterior mean should track theta_true
+        more closely on average across a population.
+        """
+        thetas = np.random.default_rng(7).standard_normal((50, 2))
+        common = dict(
+            theta_trues=thetas,
+            prior_belief=make_prior(),
+            item_bank=make_items(),
+            strategy="surrogate_weighted",
+            stay_prob_fn=no_dropout_stay_prob,
+        )
+        r1 = simulate_population(**common, horizon=1, rng=np.random.default_rng(0))
+        r5 = simulate_population(**common, horizon=5, rng=np.random.default_rng(0))
+        err1 = mean_estimation_error(r1, thetas)
+        err5 = mean_estimation_error(r5, thetas)
+        assert err5 < err1
