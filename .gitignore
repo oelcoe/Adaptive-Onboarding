@@ -1,3 +1,7 @@
+# Experiment results (opt-in: git add -f experiments/results/run_you_want_to_keep.md)
+experiments/results/*.md
+experiments/results/*.json
+
 # Python
 __pycache__/
 *.py[cod]

@@ -5,22 +5,33 @@ Compare five adaptive questionnaire policies under a realistic dropout model.
 
 Policies compared
 -----------------
-  fixed               — items presented in bank order (natural ordering)
-  random              — uniform random item selection at each step
-  myopic_exact        — exact one-step information-gain lookahead
-  surrogate_unweighted— log(1 + a^T Sigma a)  (ignores dropout risk)
-  surrogate_weighted  — log(1 + p_stay * a^T Sigma a)  (dropout-aware)
+  fixed               -- items presented in bank order (natural ordering)
+  random              -- uniform random item selection at each step
+  myopic_exact        -- exact one-step information-gain lookahead
+  surrogate_unweighted-- log(1 + a^T Sigma a)  (ignores dropout risk)
+  surrogate_weighted  -- log(1 + p_stay * a^T Sigma a)  (dropout-aware)
 
 Usage
 -----
-    python -m experiments.policy_comparison          # from repo root
-    python experiments/policy_comparison.py          # as a plain script
+    # Use file defaults
+    python -m experiments.policy_comparison
+
+    # Override individual parameters
+    python -m experiments.policy_comparison --dropout 0.20
+    python -m experiments.policy_comparison --dim 6 --horizon 30 --users 1000
+    python -m experiments.policy_comparison --dropout 0.10 --sensitive-frac 0.40
+
+    # Full list of overridable parameters
+    python -m experiments.policy_comparison --help
 """
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
@@ -36,24 +47,19 @@ from src.synthetic import generate_user_population, synthetic_item_bank
 
 
 # ---------------------------------------------------------------------------
-# Experiment configuration
+# Default configuration  (all values overridable via CLI or run_experiment())
 # ---------------------------------------------------------------------------
 
-SEED_BANK       = 0       # item-bank RNG seed
-SEED_POPULATION = 1       # user-population RNG seed
-SEED_SIMULATE   = 2       # episode simulation RNG seed
-
-DIM             = 6       # latent trait dimensions
-N_ITEMS         = 30      # total items in the bank
-N_CATEGORIES    = 4       # ordinal response categories per item
-SENSITIVE_FRAC  = 0.30    # fraction of items that are sensitive (≈ 9/30)
-
-P_DROPOUT_SENS  = 0.10    # per-question dropout probability for sensitive items
-N_USERS         = 500     # synthetic population size
-HORIZON         = 20      # maximum questions per episode
-
-PRIOR_MU    = np.zeros(DIM)
-PRIOR_SIGMA = np.eye(DIM)
+DEFAULT_DIM            = 2
+DEFAULT_N_ITEMS        = 30
+DEFAULT_N_CATEGORIES   = 4
+DEFAULT_SENSITIVE_FRAC = 0.30
+DEFAULT_P_DROPOUT      = 0.10
+DEFAULT_N_USERS        = 500
+DEFAULT_HORIZON        = 12
+DEFAULT_SEED_BANK      = 0
+DEFAULT_SEED_POP       = 1
+DEFAULT_SEED_SIM       = 2
 
 POLICIES: list[str] = [
     "fixed",
@@ -65,55 +71,53 @@ POLICIES: list[str] = [
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers  (all accept explicit config rather than reading module globals)
 # ---------------------------------------------------------------------------
 
 
-def _build_item_bank() -> list:
-    return synthetic_item_bank(
-        n_items=N_ITEMS,
-        dim=DIM,
-        n_categories=N_CATEGORIES,
-        sensitive_fraction=SENSITIVE_FRAC,
-        rng_seed=SEED_BANK,
-        vary_sensitivity_levels=False,
-    )
-
-
-def _print_header(n_sensitive: int) -> None:
+def _print_header(
+    *,
+    dim: int,
+    n_items: int,
+    n_sensitive: int,
+    horizon: int,
+    p_dropout: float,
+    n_users: int,
+) -> None:
     width = 60
     print()
     print("=" * width)
     print(" SIMULATION SETUP")
     print("=" * width)
-    print(f"  Users              : {N_USERS}")
-    print(f"  Latent dimensions  : {DIM}")
-    print(f"  Horizon            : {HORIZON} questions")
-    print(f"  Item bank          : {N_ITEMS} items  "
-          f"({n_sensitive} sensitive, {100 * n_sensitive / N_ITEMS:.0f} %)")
+    print(f"  Users              : {n_users}")
+    print(f"  Latent dimensions  : {dim}")
+    print(f"  Horizon            : {horizon} questions")
+    print(f"  Item bank          : {n_items} items  "
+          f"({n_sensitive} sensitive, {100 * n_sensitive / n_items:.0f} %)")
     print(f"  Sensitivity level  : 1.0 (fixed, all sensitive items)")
-    print(f"  Dropout prob.      : {P_DROPOUT_SENS * 100:.0f} % per sensitive question")
-    print(f"  Prior              : N(0, I_{DIM})")
-    print(f"  Batch (s)          : total wall time for all {N_USERS} episodes")
+    print(f"  Dropout prob.      : {p_dropout * 100:.0f} % per sensitive question")
+    print(f"  Prior              : N(0, I_{dim})")
+    print(f"  Batch (s)          : total wall time for all {n_users} episodes")
     print("=" * width)
     print()
 
 
-def _print_table(
+def _table_lines(
     results: dict[str, PolicyMetrics],
     elapsed: dict[str, float],
     est_errors: dict[str, float],
-) -> None:
-    CP = 24   # policy name column
-    CN = 10   # integer column
-    CF = 11   # float column
+) -> list[str]:
+    """Return the results table as a list of plain-text lines."""
+    CP = 24
+    CN = 10
+    CF = 11
 
     cols = [
-        ("Policy",      CP, "<", "s"),
-        ("Dropouts",    CN, ">", "d"),
-        ("Dropout %",   CF, ">", ".1f"),
-        ("Answered",    CF, ">", ".2f"),
-        ("Asked",       CF, ">", ".2f"),
+        ("Policy",       CP, "<", "s"),
+        ("Dropouts",     CN, ">", "d"),
+        ("Dropout %",    CF, ">", ".1f"),
+        ("Answered",     CF, ">", ".2f"),
+        ("Asked",        CF, ">", ".2f"),
         ("Sens. asked",  CF, ">", ".2f"),
         ("D-error",      CF, ">", ".4f"),
         ("Est. error",   CF, ">", ".4f"),
@@ -132,7 +136,7 @@ def _print_table(
     header = "  ".join(header_parts)
     sep    = "-" * len(header)
 
-    values_by_row: list[tuple] = [
+    rows = [
         (
             pm.policy_name,
             pm.dropout_count,
@@ -148,47 +152,192 @@ def _print_table(
         for pm in results.values()
     ]
 
-    print(header)
-    print(sep)
-    for values in values_by_row:
+    lines = [header, sep]
+    for values in rows:
         cells = [
             _fmt_cell(v, width, align, fmt)
             for v, (_, width, align, fmt) in zip(values, cols)
         ]
-        print("  ".join(cells))
-    print(sep)
+        lines.append("  ".join(cells))
+    lines.append(sep)
+    return lines
+
+
+def _print_table(
+    results: dict[str, PolicyMetrics],
+    elapsed: dict[str, float],
+    est_errors: dict[str, float],
+) -> None:
+    for line in _table_lines(results, elapsed, est_errors):
+        print(line)
     print()
 
 
+def save_results(
+    *,
+    dim: int,
+    n_items: int,
+    n_categories: int,
+    sensitive_frac: float,
+    n_sensitive: int,
+    p_dropout: float,
+    n_users: int,
+    horizon: int,
+    seed_bank: int,
+    seed_pop: int,
+    seed_sim: int,
+    results: dict[str, PolicyMetrics],
+    elapsed: dict[str, float],
+    est_errors: dict[str, float],
+) -> Path:
+    """
+    Write a Markdown summary and a JSON data file to experiments/results/.
+    Returns the path of the Markdown file.
+    """
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stem = f"{timestamp}_dim{dim}_h{horizon}_p{int(p_dropout * 100)}_n{n_users}"
+
+    results_dir = Path(__file__).resolve().parent / "results"
+    results_dir.mkdir(exist_ok=True)
+
+    # ---- Markdown ----
+    md_lines: list[str] = [
+        f"# Policy Comparison -- {timestamp}",
+        "",
+        "## Setup",
+        "",
+        "| Parameter | Value |",
+        "|---|---|",
+        f"| Users | {n_users} |",
+        f"| Latent dimensions | {dim} |",
+        f"| Horizon | {horizon} questions |",
+        f"| Item bank | {n_items} items ({n_sensitive} sensitive, "
+        f"{100 * n_sensitive / n_items:.0f} %) |",
+        "| Sensitivity level | 1.0 (fixed) |",
+        f"| Dropout prob. | {p_dropout * 100:.0f} % per sensitive question |",
+        f"| Prior | N(0, I_{dim}) |",
+        "",
+        "## Results",
+        "",
+        "```",
+        *_table_lines(results, elapsed, est_errors),
+        "```",
+        "",
+        "## Notes",
+        "",
+        "_Add your observations here._",
+        "",
+    ]
+
+    md_path = results_dir / f"{stem}.md"
+    md_path.write_text("\n".join(md_lines), encoding="utf-8")
+
+    # ---- JSON ----
+    json_data = {
+        "timestamp": timestamp,
+        "config": {
+            "dim": dim,
+            "n_items": n_items,
+            "n_categories": n_categories,
+            "sensitive_frac": sensitive_frac,
+            "n_sensitive": n_sensitive,
+            "p_dropout_sens": p_dropout,
+            "n_users": n_users,
+            "horizon": horizon,
+            "seed_bank": seed_bank,
+            "seed_population": seed_pop,
+            "seed_simulate": seed_sim,
+        },
+        "policies": {
+            policy: {
+                "n_episodes": pm.n_episodes,
+                "dropout_count": pm.dropout_count,
+                "dropout_rate": pm.dropout_rate,
+                "mean_n_answered": pm.mean_n_answered,
+                "mean_n_asked": pm.mean_n_asked,
+                "mean_sensitive_asked": pm.mean_sensitive_asked,
+                "mean_final_d_error": pm.mean_final_d_error,
+                "mean_final_logdet": pm.mean_final_logdet,
+                "mean_logdet_reduction": pm.mean_logdet_reduction,
+                "mean_estimation_error": est_errors.get(policy, float("nan")),
+                "batch_seconds": elapsed.get(policy, float("nan")),
+                "episodes_per_second": pm.n_episodes / elapsed.get(policy, float("nan")),
+            }
+            for policy, pm in results.items()
+        },
+    }
+
+    json_path = results_dir / f"{stem}.json"
+    json_path.write_text(json.dumps(json_data, indent=2), encoding="utf-8")
+
+    return md_path
+
+
 # ---------------------------------------------------------------------------
-# Main
+# Main experiment function
 # ---------------------------------------------------------------------------
 
 
-def run_experiment() -> dict[str, PolicyMetrics]:
-    item_bank   = _build_item_bank()
+def run_experiment(
+    *,
+    dim: int            = DEFAULT_DIM,
+    n_items: int        = DEFAULT_N_ITEMS,
+    n_categories: int   = DEFAULT_N_CATEGORIES,
+    sensitive_frac: float = DEFAULT_SENSITIVE_FRAC,
+    p_dropout: float    = DEFAULT_P_DROPOUT,
+    n_users: int        = DEFAULT_N_USERS,
+    horizon: int        = DEFAULT_HORIZON,
+    seed_bank: int      = DEFAULT_SEED_BANK,
+    seed_pop: int       = DEFAULT_SEED_POP,
+    seed_sim: int       = DEFAULT_SEED_SIM,
+    policies: list[str] | None = None,
+) -> dict[str, PolicyMetrics]:
+    """
+    Run the policy comparison experiment and save results to experiments/results/.
+
+    All parameters default to the module-level DEFAULT_* constants, so calling
+    ``run_experiment()`` is identical to running the script with no CLI flags.
+    Can also be called programmatically from a sweep script:
+
+        from experiments.policy_comparison import run_experiment
+        for p in [0.05, 0.10, 0.20]:
+            run_experiment(p_dropout=p, dim=6)
+    """
+    item_bank = synthetic_item_bank(
+        n_items=n_items,
+        dim=dim,
+        n_categories=n_categories,
+        sensitive_fraction=sensitive_frac,
+        rng_seed=seed_bank,
+        vary_sensitivity_levels=False,
+    )
     n_sensitive = sum(item.is_sensitive for item in item_bank)
 
-    _print_header(n_sensitive)
+    _print_header(
+        dim=dim,
+        n_items=n_items,
+        n_sensitive=n_sensitive,
+        horizon=horizon,
+        p_dropout=p_dropout,
+        n_users=n_users,
+    )
 
     stay_prob_fn = make_sensitive_constant_stay_prob(
-        p_stay_sensitive=1.0 - P_DROPOUT_SENS,
+        p_stay_sensitive=1.0 - p_dropout,
         p_stay_normal=1.0,
     )
-    prior = BeliefState(mu=PRIOR_MU, Sigma=PRIOR_SIGMA)
-    theta_trues = generate_user_population(
-        n_users=N_USERS,
-        dim=DIM,
-        rng_seed=SEED_POPULATION,
-    )
+    prior       = BeliefState(mu=np.zeros(dim), Sigma=np.eye(dim))
+    theta_trues = generate_user_population(n_users=n_users, dim=dim, rng_seed=seed_pop)
+
+    active_policies = policies if policies is not None else POLICIES
 
     # ---- run each policy ----
     policy_metrics: dict[str, PolicyMetrics] = {}
     policy_elapsed: dict[str, float]         = {}
     policy_est_err: dict[str, float]         = {}
 
-    for policy in POLICIES:
-        rng = np.random.default_rng([SEED_SIMULATE, hash(policy) % (2**31)])
+    for policy in active_policies:
+        rng = np.random.default_rng([seed_sim, hash(policy) % (2**31)])
         t0  = time.perf_counter()
 
         results = simulate_population(
@@ -196,7 +345,7 @@ def run_experiment() -> dict[str, PolicyMetrics]:
             prior_belief=prior,
             item_bank=item_bank,
             strategy=policy,
-            horizon=HORIZON,
+            horizon=horizon,
             stay_prob_fn=stay_prob_fn,
             rng=rng,
         )
@@ -224,8 +373,70 @@ def run_experiment() -> dict[str, PolicyMetrics]:
     print()
     _print_table(policy_metrics, policy_elapsed, policy_est_err)
 
+    # ---- save to disk ----
+    md_path = save_results(
+        dim=dim,
+        n_items=n_items,
+        n_categories=n_categories,
+        sensitive_frac=sensitive_frac,
+        n_sensitive=n_sensitive,
+        p_dropout=p_dropout,
+        n_users=n_users,
+        horizon=horizon,
+        seed_bank=seed_bank,
+        seed_pop=seed_pop,
+        seed_sim=seed_sim,
+        results=policy_metrics,
+        elapsed=policy_elapsed,
+        est_errors=policy_est_err,
+    )
+    print(f"Results saved to {md_path.relative_to(Path(__file__).resolve().parents[1])}")
+    print(f"  JSON: {md_path.with_suffix('.json').name}")
+
     return policy_metrics
 
 
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Compare adaptive questionnaire policies.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    p.add_argument("--dim",            type=int,   default=DEFAULT_DIM,
+                   help="Number of latent trait dimensions")
+    p.add_argument("--items",          type=int,   default=DEFAULT_N_ITEMS,
+                   help="Total items in the bank")
+    p.add_argument("--sensitive-frac", type=float, default=DEFAULT_SENSITIVE_FRAC,
+                   help="Fraction of items that are sensitive (0–1)")
+    p.add_argument("--dropout",        type=float, default=DEFAULT_P_DROPOUT,
+                   help="Per-question dropout probability for sensitive items (0–1)")
+    p.add_argument("--users",          type=int,   default=DEFAULT_N_USERS,
+                   help="Number of synthetic users")
+    p.add_argument("--horizon",        type=int,   default=DEFAULT_HORIZON,
+                   help="Maximum questions per episode")
+    p.add_argument("--seed-bank",      type=int,   default=DEFAULT_SEED_BANK,
+                   help="RNG seed for item bank generation")
+    p.add_argument("--seed-pop",       type=int,   default=DEFAULT_SEED_POP,
+                   help="RNG seed for user population")
+    p.add_argument("--seed-sim",       type=int,   default=DEFAULT_SEED_SIM,
+                   help="RNG seed for episode simulation")
+    return p.parse_args()
+
+
 if __name__ == "__main__":
-    run_experiment()
+    args = _parse_args()
+    run_experiment(
+        dim=args.dim,
+        n_items=args.items,
+        sensitive_frac=args.sensitive_frac,
+        p_dropout=args.dropout,
+        n_users=args.users,
+        horizon=args.horizon,
+        seed_bank=args.seed_bank,
+        seed_pop=args.seed_pop,
+        seed_sim=args.seed_sim,
+    )
