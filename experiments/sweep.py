@@ -287,6 +287,7 @@ def run_sweep(
     all_est_errors:       list[dict[str, float]]         = [] # list to store the estimation errors for each condition.
     all_sensitive_rates:  list[dict[str, float]]         = [] # list to store the sensitive rates for each condition.
     all_d_error_completed: list[dict[str, float]]        = [] # list to store the completed D-error for each condition.
+    all_d_error_by_dimension_completed: list[dict[str, list[float]]] = [] # list to store completed per-dimension D-error for each condition.
     all_axis_errors: list[dict[str, float]] | None = (
         [] if sensitivity_assignment == "high_trait_tail" else None # list to store the sensitive trait errors for each condition. This is only relevant for the high_trait_tail sensitivity assignment.
     )
@@ -351,11 +352,16 @@ def run_sweep(
             policy: data.get("mean_final_d_error_completed", float("nan"))
             for policy, data in latest_json["policies"].items()
         }
+        d_error_by_dimension_completed = { # create a dictionary of the completed per-dimension D-error for each policy.
+            policy: data.get("mean_final_d_error_by_dimension_completed", [])
+            for policy, data in latest_json["policies"].items()
+        }
 
         all_results.append(pm_dict) # store the results for the current condition.
         all_est_errors.append(est_errors) # store the estimation errors for the current condition.
         all_sensitive_rates.append(sensitive_rates) # store the sensitive rates for the current condition.
         all_d_error_completed.append(d_error_completed) # store the completed D-error for the current condition.
+        all_d_error_by_dimension_completed.append(d_error_by_dimension_completed) # store the completed per-dimension D-error for the current condition.
         if all_axis_errors is not None:
             all_axis_errors.append(axis_errors) # store the sensitive trait errors for the current condition. This is only relevant for the high_trait_tail sensitivity assignment.
 
@@ -396,7 +402,9 @@ def run_sweep(
                         "mean_sensitive_asked": pm_dict[policy].mean_sensitive_asked, # store the number of sensitive questions asked for the current condition.
                         "sensitive_rate": all_sensitive_rates[index].get(policy, float("nan")), # store the sensitive rate for the current condition.
                         "mean_final_d_error": pm_dict[policy].mean_final_d_error, # store the final D-error for the current condition.
+                        "mean_final_d_error_by_dimension": list(pm_dict[policy].mean_final_d_error_by_dimension), # store final per-dimension D-error for the current condition.
                         "mean_final_d_error_completed": all_d_error_completed[index].get(policy, float("nan")), # store the completed D-error for the current condition.
+                        "mean_final_d_error_by_dimension_completed": all_d_error_by_dimension_completed[index].get(policy, []), # store completed per-dimension D-error for the current condition.
                         "mean_logdet_reduction": pm_dict[policy].mean_logdet_reduction, # store the mean logdet reduction for the current condition.
                         "mean_estimation_error": est_errors.get(policy, float("nan")), # store the estimation error for the current condition.  
                         "mean_sensitive_trait_error": (

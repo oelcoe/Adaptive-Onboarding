@@ -116,6 +116,7 @@ class EpisodeMetrics:
     final_logdet: float
     total_logdet_reduction: float
     final_d_error: float
+    final_d_error_by_dimension: tuple[float, ...]
     n_answered: int
     n_asked: int
     dropped_out: bool
@@ -170,9 +171,11 @@ class PolicyMetrics:
     mean_final_logdet: float
     mean_logdet_reduction: float
     mean_final_d_error: float
+    mean_final_d_error_by_dimension: tuple[float, ...] = field(default_factory=tuple)
     mean_sensitive_asked: float = 0.0
     mean_sensitivity_level_asked: float = 0.0
     mean_final_d_error_completed: float = float("nan")
+    mean_final_d_error_by_dimension_completed: tuple[float, ...] = field(default_factory=tuple)
     sensitive_rate: float = float("nan")
 
 
@@ -218,6 +221,9 @@ def episode_metrics(
 
     d = result.final_belief.dim
     final_d_error = float(np.exp(final_logdet / d))
+    final_d_error_by_dimension = tuple(
+        float(value) for value in np.diag(result.final_belief.Sigma)
+    )
 
     lookup = _item_lookup(item_bank)
     asked_items = [
@@ -235,6 +241,7 @@ def episode_metrics(
         final_logdet=final_logdet,
         total_logdet_reduction=total_logdet_reduction,
         final_d_error=final_d_error,
+        final_d_error_by_dimension=final_d_error_by_dimension,
         n_answered=result.n_answered,
         n_asked=result.n_asked,
         dropped_out=result.terminated_by_dropout,
@@ -280,6 +287,7 @@ def aggregate_policy_metrics(
 
     n_episodes = len(per_episode)
     dropout_count = sum(em.dropped_out for em in per_episode)
+    completed = [em for em in per_episode if not em.dropped_out]
 
     return PolicyMetrics(
         policy_name=policy_name,
@@ -293,6 +301,13 @@ def aggregate_policy_metrics(
             np.mean([em.total_logdet_reduction for em in per_episode])
         ),
         mean_final_d_error=float(np.mean([em.final_d_error for em in per_episode])),
+        mean_final_d_error_by_dimension=tuple(
+            float(value)
+            for value in np.mean(
+                [em.final_d_error_by_dimension for em in per_episode],
+                axis=0,
+            )
+        ),
         mean_sensitive_asked=float(
             np.mean([em.n_sensitive_asked for em in per_episode])
         ),
@@ -300,8 +315,15 @@ def aggregate_policy_metrics(
             np.mean([em.sensitivity_level_asked for em in per_episode])
         ),
         mean_final_d_error_completed=float(
-            np.mean([em.final_d_error for em in per_episode if not em.dropped_out])
-        ) if any(not em.dropped_out for em in per_episode) else float("nan"),
+            np.mean([em.final_d_error for em in completed])
+        ) if completed else float("nan"),
+        mean_final_d_error_by_dimension_completed=tuple(
+            float(value)
+            for value in np.mean(
+                [em.final_d_error_by_dimension for em in completed],
+                axis=0,
+            )
+        ) if completed else tuple(),
         sensitive_rate=float(
             np.mean([em.n_sensitive_asked for em in per_episode])
             / np.mean([em.n_asked for em in per_episode])

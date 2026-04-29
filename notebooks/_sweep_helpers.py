@@ -255,6 +255,216 @@ def plot_metric_lines(
         ax.legend(fontsize=8)
 
 
+def plot_dimension_metric_lines(
+    ax,
+    data: dict[str, Any],
+    metric: str,
+    *,
+    policy: str,
+    condition_value: Any | None = None,
+    y_scale: float = 1.0,
+    xlabel: str = "Latent dimension",
+    ylabel: str,
+    title: str,
+) -> None:
+    """Plot a vector-valued metric across latent dimensions for one policy."""
+    conditions = data["conditions"]
+    if condition_value is None:
+        condition = conditions[-1]
+    else:
+        matches = [c for c in conditions if c["value"] == condition_value]
+        if not matches:
+            raise ValueError(f"No sweep condition found for value={condition_value!r}.")
+        condition = matches[0]
+
+    metrics = condition["policies"].get(policy)
+    if metrics is None:
+        raise ValueError(f"Policy not found in sweep: {policy}")
+
+    values = np.array(metrics.get(metric, []), dtype=float) * y_scale
+    if values.size == 0:
+        raise ValueError(f"Metric '{metric}' is missing or empty for policy '{policy}'.")
+
+    style = POLICY_STYLE[policy]
+    dims = np.arange(1, values.size + 1)
+    ax.plot(
+        dims,
+        values,
+        color=style["color"],
+        ls=style["ls"],
+        marker=style["marker"],
+        markersize=5,
+        linewidth=1.6,
+        label=style["label"],
+    )
+    ax.set_xticks(dims)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    style_ax(ax, grid_axis="y")
+
+
+def _condition_metric_vector(
+    condition: dict[str, Any],
+    policy: str,
+    metric: str,
+) -> np.ndarray:
+    metrics = condition["policies"].get(policy)
+    if metrics is None:
+        return np.array([], dtype=float)
+    return np.array(metrics.get(metric, []), dtype=float)
+
+
+def _valid_dimension_axes(axes: list[int] | None, dim: int) -> list[int]:
+    if axes is None:
+        return []
+    return [axis for axis in axes if 0 <= int(axis) < dim]
+
+
+def sweep_dimension_group_series(
+    data: dict[str, Any],
+    metric: str,
+    policy: str,
+    *,
+    sensitive_axes: list[int] | None = None,
+) -> dict[str, tuple[list, list]]:
+    """
+    Extract sweep-value series for sensitive vs other dimension means.
+
+    Axes are zero-based, matching the experiment configuration.
+    """
+    config = data.get("fixed_config", data.get("config", {}))
+    axes = sensitive_axes if sensitive_axes is not None else config.get("sensitive_axes")
+    series: dict[str, tuple[list, list]] = {}
+
+    for condition in data["conditions"]:
+        values = _condition_metric_vector(condition, policy, metric)
+        if values.size == 0:
+            continue
+
+        dim = values.size
+        sensitive = _valid_dimension_axes(axes, dim)
+        other = [axis for axis in range(dim) if axis not in sensitive]
+        groups = (
+            [("Sensitive traits", sensitive), ("Other traits", other)]
+            if sensitive
+            else [("All traits", list(range(dim)))]
+        )
+
+        for label, group_axes in groups:
+            if not group_axes:
+                continue
+            xs, ys = series.setdefault(label, ([], []))
+            xs.append(condition["value"])
+            ys.append(float(np.mean(values[group_axes])))
+
+    return series
+
+
+def plot_dimension_group_lines(
+    ax,
+    data: dict[str, Any],
+    metric: str,
+    *,
+    policy: str,
+    sensitive_axes: list[int] | None = None,
+    x_scale: float = 1.0,
+    y_scale: float = 1.0,
+    xlabel: str,
+    ylabel: str,
+    title: str,
+) -> None:
+    """Plot sensitive-vs-other trait means for a vector-valued sweep metric."""
+    group_styles = {
+        "Sensitive traits": {"color": PALETTE["red"], "ls": "-", "marker": "o"},
+        "Other traits": {"color": STRUCTURE_GRAY, "ls": "--", "marker": "s"},
+        "All traits": {"color": POLICY_STYLE[policy]["color"], "ls": "-", "marker": "o"},
+    }
+    series = sweep_dimension_group_series(
+        data,
+        metric,
+        policy,
+        sensitive_axes=sensitive_axes,
+    )
+    if not series:
+        raise ValueError(
+            f"Metric '{metric}' is missing or empty for policy '{policy}'."
+        )
+
+    for label, (xs, ys) in series.items():
+        style = group_styles[label]
+        ax.plot(
+            np.array(xs, dtype=float) * x_scale,
+            np.array(ys, dtype=float) * y_scale,
+            color=style["color"],
+            ls=style["ls"],
+            marker=style["marker"],
+            markersize=5,
+            linewidth=1.8,
+            label=label,
+        )
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    style_ax(ax, grid_axis="y")
+    ax.legend(fontsize=8)
+
+
+def plot_dimension_spread_lines(
+    ax,
+    data: dict[str, Any],
+    metric: str,
+    *,
+    policy: str,
+    x_scale: float = 1.0,
+    y_scale: float = 1.0,
+    xlabel: str,
+    ylabel: str,
+    title: str,
+) -> None:
+    """Plot mean trait metric with a min-to-max band across dimensions."""
+    xs = []
+    means = []
+    lows = []
+    highs = []
+    for condition in data["conditions"]:
+        values = _condition_metric_vector(condition, policy, metric)
+        if values.size == 0:
+            continue
+        xs.append(condition["value"])
+        means.append(float(np.mean(values)))
+        lows.append(float(np.min(values)))
+        highs.append(float(np.max(values)))
+
+    if not xs:
+        raise ValueError(
+            f"Metric '{metric}' is missing or empty for policy '{policy}'."
+        )
+
+    style = POLICY_STYLE[policy]
+    xs_arr = np.array(xs, dtype=float) * x_scale
+    means_arr = np.array(means, dtype=float) * y_scale
+    lows_arr = np.array(lows, dtype=float) * y_scale
+    highs_arr = np.array(highs, dtype=float) * y_scale
+    ax.fill_between(xs_arr, lows_arr, highs_arr, color=style["color"], alpha=0.16)
+    ax.plot(
+        xs_arr,
+        means_arr,
+        color=style["color"],
+        ls=style["ls"],
+        marker=style["marker"],
+        markersize=5,
+        linewidth=1.8,
+        label=style["label"],
+    )
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    style_ax(ax, grid_axis="y")
+    ax.legend(fontsize=8)
+
+
 def equalize_y_axes(*axes, pad_fraction: float = 0.05) -> None:
     """Give multiple axes the same y-limits for direct visual comparison."""
     limits = [ax.get_ylim() for ax in axes]
@@ -386,6 +596,9 @@ __all__ = [
     "list_sweeps",
     "load_run",
     "load_sweep",
+    "plot_dimension_group_lines",
+    "plot_dimension_metric_lines",
+    "plot_dimension_spread_lines",
     "plot_metric_lines",
     "plot_pareto",
     "plot_weighted_delta",

@@ -336,7 +336,11 @@ def save_results(
                 "mean_sensitive_asked": pm.mean_sensitive_asked,
                 "sensitive_rate": pm.sensitive_rate,
                 "mean_final_d_error": pm.mean_final_d_error,
+                "mean_final_d_error_by_dimension": list(pm.mean_final_d_error_by_dimension),
                 "mean_final_d_error_completed": pm.mean_final_d_error_completed,
+                "mean_final_d_error_by_dimension_completed": list(
+                    pm.mean_final_d_error_by_dimension_completed
+                ),
                 "mean_final_logdet": pm.mean_final_logdet,
                 "mean_logdet_reduction": pm.mean_logdet_reduction,
                 "mean_estimation_error": est_errors.get(policy, float("nan")),

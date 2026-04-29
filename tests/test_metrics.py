@@ -209,6 +209,13 @@ class TestEpisodeMetrics:
         expected = float(np.linalg.det(ep.final_belief.Sigma) ** (1.0 / d))
         assert em.final_d_error == pytest.approx(expected)
 
+    def test_final_d_error_by_dimension_matches_covariance_diagonal(self) -> None:
+        ep = _run_no_dropout(horizon=4)
+        em = episode_metrics(ep)
+        assert em.final_d_error_by_dimension == pytest.approx(
+            tuple(np.diag(ep.final_belief.Sigma))
+        )
+
     def test_final_d_error_decreases_after_answering(self) -> None:
         prior = make_prior()
         ep    = _run_no_dropout(horizon=4)
@@ -337,6 +344,15 @@ class TestAggregatePolicyMetrics:
         pm       = aggregate_policy_metrics(results, policy_name="x")
         expected = np.mean([episode_metrics(r).final_d_error for r in results])
         assert pm.mean_final_d_error == pytest.approx(float(expected))
+
+    def test_mean_final_d_error_by_dimension_matches_manual(self) -> None:
+        results  = [_run_no_dropout(horizon=h) for h in [2, 3, 4]]
+        pm       = aggregate_policy_metrics(results, policy_name="x")
+        expected = np.mean(
+            [episode_metrics(r).final_d_error_by_dimension for r in results],
+            axis=0,
+        )
+        assert pm.mean_final_d_error_by_dimension == pytest.approx(tuple(expected))
 
     def test_sensitivity_burden_means_match_manual(self) -> None:
         items = make_items()
