@@ -61,10 +61,11 @@ DEFAULT_N_USERS        = 500
 DEFAULT_HORIZON        = 12
 DEFAULT_SENSITIVITY_ASSIGNMENT = "random"
 DEFAULT_SENSITIVE_AXES = None
-DEFAULT_SEED_BANK      = 0
+DEFAULT_SEED_BANK      = 0 
 DEFAULT_SEED_POP       = 1
 DEFAULT_SEED_SIM       = 2
 
+# Which policies to compare
 POLICIES: list[str] = [
     "fixed",
     "random",
@@ -73,7 +74,7 @@ POLICIES: list[str] = [
     "surrogate_weighted",
 ]
 
-
+# Helper function to format numeric config values compactly for result filenames.
 def _format_stem_number(value: float) -> str:
     """Format numeric config values compactly for result filenames."""
     return f"{value:g}".replace("-", "m").replace(".", "p")
@@ -83,7 +84,7 @@ def _format_stem_number(value: float) -> str:
 # Helpers  (all accept explicit config rather than reading module globals)
 # ---------------------------------------------------------------------------
 
-
+# Print header for the simulation setup in terminal.
 def _print_header(
     *,
     dim: int,
@@ -118,7 +119,7 @@ def _print_header(
     print("=" * width)
     print()
 
-
+# Build the results table as a list of plain-text lines.
 def _table_lines(
     results: dict[str, PolicyMetrics],
     elapsed: dict[str, float],
@@ -148,6 +149,7 @@ def _table_lines(
         ("ep/s",         CF, ">", ".1f"),
     ]
 
+# Helper function to format a single cell in the results table.
     def _fmt_cell(value: object, width: int, align: str, fmt: str) -> str:
         if fmt == "s":
             return f"{value:{align}{width}s}"
@@ -190,7 +192,7 @@ def _table_lines(
     lines.append(sep)
     return lines
 
-
+# Print the results table to the terminal.
 def _print_table(
     results: dict[str, PolicyMetrics],
     elapsed: dict[str, float],
@@ -201,7 +203,8 @@ def _print_table(
         print(line)
     print()
 
-
+# This is only  relevant for the high_trait_tail sensitivity assignment. 
+# Compute the mean absolute posterior-mean error on selected latent axes.
 def _mean_sensitive_trait_error(results, theta_trues, axes: list[int]) -> float:
     """Mean absolute posterior-mean error on selected latent axes."""
     return float(
@@ -213,7 +216,7 @@ def _mean_sensitive_trait_error(results, theta_trues, axes: list[int]) -> float:
         )
     )
 
-
+# Sensitive axes only make sense for the high_trait_tail sensitivity assignment.
 def _resolve_experiment_sensitive_axes(
     *,
     dim: int,
@@ -224,9 +227,10 @@ def _resolve_experiment_sensitive_axes(
         return None
     if sensitive_axes is not None:
         return list(dict.fromkeys(sensitive_axes))
-    return [dim - 1]
+    return [dim - 1] # default to the final axis for high_trait_tail if no axes are specified	
 
 
+# Save the results to a JSON file and a Markdown file.
 def save_results(
     *,
     dim: int,
@@ -358,7 +362,7 @@ def save_results(
 # Main experiment function
 # ---------------------------------------------------------------------------
 
-
+# Run the policy comparison experiment and save results to experiments/results/. -- this is the main function that is called by the script.
 def run_experiment(
     *,
     dim: int            = DEFAULT_DIM,
@@ -387,6 +391,7 @@ def run_experiment(
         for p in [0.05, 0.10, 0.20]:
             run_experiment(p_dropout=p, dim=6)
     """
+    # Generate the item bank.
     item_bank = synthetic_item_bank(
         n_items=n_items,
         dim=dim,
@@ -397,7 +402,8 @@ def run_experiment(
         rng_seed=seed_bank,
         vary_sensitivity_levels=False,
     )
-    n_sensitive = sum(item.is_sensitive for item in item_bank)
+    n_sensitive = sum(item.is_sensitive for item in item_bank) # count the number of sensitive items in the item bank
+    # Resolve the sensitive axes for the experiment -- this is only relevant for the high_trait_tail sensitivity assignment.
     resolved_sensitive_axes = _resolve_experiment_sensitive_axes(
         dim=dim,
         sensitivity_assignment=sensitivity_assignment,
@@ -419,29 +425,34 @@ def run_experiment(
         sensitive_axes=resolved_multi_axes,
     )
 
+    # Define the stay probability function. --- currently constant stay probability for all items. This should be updated to use the stay probability function that is specific to the sensitivity assignment.
     stay_prob_fn = make_sensitive_constant_stay_prob(
         p_stay_sensitive=1.0 - p_dropout,
-        p_stay_normal=1.0,
+        p_stay_normal=1.0, # normal items never cause dropout
     )
-    prior       = BeliefState(mu=np.zeros(dim), Sigma=np.eye(dim))
-    theta_trues = generate_user_population(n_users=n_users, dim=dim, rng_seed=seed_pop)
+    prior       = BeliefState(mu=np.zeros(dim), Sigma=np.eye(dim)) # prior is a normal distribution with mean 0 and identity covariance matrix, this might need to be updated since it is the same as the prior for the synthetic user population.
+    theta_trues = generate_user_population(n_users=n_users, dim=dim, rng_seed=seed_pop) # generate the true user states for the synthetic user population, the default is a normal distribution with mean 0 and identity covariance matrix.
 
-    active_policies = policies if policies is not None else POLICIES
+    # ---- We can also generate the true user states for the synthetic user population using a uniform distribution. ----
+    # rng_pop = np.random.default_rng(seed_pop)
+    # theta_trues = rng_pop.uniform(low=-2.0, high=2.0, size=(n_users, dim)) # generate the true user states for the synthetic user population using a uniform distribution.    
+
+    active_policies = policies if policies is not None else POLICIES # list of policies to compare.
 
     # ---- run each policy ----
-    policy_metrics: dict[str, PolicyMetrics] = {}
-    policy_elapsed: dict[str, float]         = {}
-    policy_est_err: dict[str, float]         = {}
-    policy_axis_err: dict[str, float] | None = (
+    policy_metrics: dict[str, PolicyMetrics] = {} # dictionary to store the policy metrics for each policy.
+    policy_elapsed: dict[str, float]         = {} # dictionary to store the elapsed time for each policy.
+    policy_est_err: dict[str, float]         = {} # dictionary to store the estimation error for each policy.   
+    policy_axis_err: dict[str, float] | None = ( # dictionary to store the sensitive trait error for each policy. This is only relevant for the high_trait_tail sensitivity assignment.
         {} if resolved_sensitive_axes is not None else None
     )
 
-    for policy_idx, policy in enumerate(active_policies):
-        rng = np.random.default_rng([seed_sim, policy_idx])
+    for policy_idx, policy in enumerate(active_policies): # iterate over the policies to compare.
+        rng = np.random.default_rng([seed_sim, policy_idx]) # set the random seed for the policy.
 
         t0  = time.perf_counter()
 
-        results = simulate_population(
+        results = simulate_population( # simulate the population for the policy.
             theta_trues=theta_trues,
             prior_belief=prior,
             item_bank=item_bank,
@@ -453,22 +464,22 @@ def run_experiment(
         )
 
         elapsed = time.perf_counter() - t0
-        pm      = aggregate_policy_metrics(results, policy_name=policy, item_bank=item_bank)
-        est_err = mean_estimation_error(results, theta_trues)
-        axis_err = (
+        pm      = aggregate_policy_metrics(results, policy_name=policy, item_bank=item_bank) # aggregate the policy metrics for the policy.
+        est_err = mean_estimation_error(results, theta_trues) # compute the estimation error for the policy.
+        axis_err = ( # compute the sensitive trait error for the policy. This is only relevant for the high_trait_tail sensitivity assignment.
             _mean_sensitive_trait_error(results, theta_trues, resolved_sensitive_axes)
             if resolved_sensitive_axes is not None
             else None
         )
 
-        policy_metrics[policy] = pm
-        policy_elapsed[policy] = elapsed
-        policy_est_err[policy] = est_err
+        policy_metrics[policy] = pm # store the policy metrics for the policy.
+        policy_elapsed[policy] = elapsed # store the elapsed time for the policy.
+        policy_est_err[policy] = est_err # store the estimation error for the policy.
         if policy_axis_err is not None and axis_err is not None:
-            policy_axis_err[policy] = axis_err
+            policy_axis_err[policy] = axis_err # store the sensitive trait error for the policy.
 
-        axis_msg = f"trait_err={axis_err:.4f}  " if axis_err is not None else ""
-        print(
+        axis_msg = f"trait_err={axis_err:.4f}  " if axis_err is not None else "" # message to print for the sensitive trait error.  
+        print( # print the policy metrics for the policy.
             f"  {policy:<22}  "
             f"dropout={pm.dropout_rate * 100:5.1f} %  "
             f"answered={pm.mean_n_answered:5.2f}  "
@@ -479,14 +490,14 @@ def run_experiment(
         )
 
     # ---- summary table ----
-    print()
+    print() # print a blank line.
     print(" POLICY COMPARISON RESULTS")
     print()
-    _print_table(policy_metrics, policy_elapsed, policy_est_err, policy_axis_err)
+    _print_table(policy_metrics, policy_elapsed, policy_est_err, policy_axis_err) # print the summary table.
 
     # ---- save to disk ----
     md_path = save_results(
-        dim=dim,
+        dim=dim, # save the results to a JSON file and a Markdown file.     
         n_items=n_items,
         n_categories=n_categories,
         sensitive_frac=sensitive_frac,
@@ -515,7 +526,7 @@ def run_experiment(
 # CLI
 # ---------------------------------------------------------------------------
 
-
+# Parse the command line arguments to override the default configuration.
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description="Compare adaptive questionnaire policies.",
@@ -551,7 +562,7 @@ def _parse_args() -> argparse.Namespace:
                    help="RNG seed for episode simulation")
     return p.parse_args()
 
-
+# Run the experiment when the script is called directly.    
 if __name__ == "__main__":
     args = _parse_args()
     run_experiment(
