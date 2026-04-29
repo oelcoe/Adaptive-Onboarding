@@ -23,6 +23,7 @@ Usage
 from __future__ import annotations
 
 import os
+import sys
 import textwrap
 import warnings
 from typing import Literal, Optional, Sequence, Tuple
@@ -34,7 +35,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.patches import Ellipse
-from scipy.stats import chi2
 
 
 # ---------------------------------------------------------------------------
@@ -210,7 +210,7 @@ def apply_notebook_style(
         "savefig.pad_inches"   : 0.15,
     })
 
-    if use_retina:
+    if use_retina and _running_in_ipython_kernel():
         try:
             from matplotlib_inline.backend_inline import set_matplotlib_formats
 
@@ -221,6 +221,15 @@ def apply_notebook_style(
 
 # Alias — use whichever name feels natural in context
 apply_style = apply_notebook_style
+
+
+def _running_in_ipython_kernel() -> bool:
+    """Return True when running inside an IPython/Jupyter kernel."""
+    ipython = sys.modules.get("IPython")
+    if ipython is None:
+        return False
+    shell = ipython.get_ipython()
+    return bool(shell and "IPKernelApp" in shell.config)
 
 
 # ---------------------------------------------------------------------------
@@ -368,7 +377,12 @@ def draw_ellipse(
     vecs   = vecs[:, order]
     angle  = np.degrees(np.arctan2(*vecs[:, 0][::-1]))
 
-    r = np.sqrt(chi2.ppf(confidence, df=2)) if n_std is None else n_std
+    if n_std is None:
+        from scipy.stats import chi2
+
+        r = np.sqrt(chi2.ppf(confidence, df=2))
+    else:
+        r = n_std
     width, height = 2 * r * np.sqrt(np.maximum(vals, 0))
 
     color = _FILL[kind]

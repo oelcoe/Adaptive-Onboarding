@@ -25,10 +25,12 @@ Usage
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.stats import chi2 as _chi2_dist
+from scipy.stats import norm as _norm_dist
 
 from .item_bank import Item
 from .simulate import EpisodeResult
@@ -37,9 +39,11 @@ from .simulate import EpisodeResult
 __all__ = [
     "EpisodeMetrics",
     "PolicyMetrics",
+    "CalibrationResult",
     "episode_metrics",
     "aggregate_policy_metrics",
     "mean_estimation_error",
+    "calibration_result",
 ]
 
 
@@ -168,6 +172,8 @@ class PolicyMetrics:
     mean_final_d_error: float
     mean_sensitive_asked: float = 0.0
     mean_sensitivity_level_asked: float = 0.0
+    mean_final_d_error_completed: float = float("nan")
+    sensitive_rate: float = float("nan")
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +299,13 @@ def aggregate_policy_metrics(
         mean_sensitivity_level_asked=float(
             np.mean([em.sensitivity_level_asked for em in per_episode])
         ),
+        mean_final_d_error_completed=float(
+            np.mean([em.final_d_error for em in per_episode if not em.dropped_out])
+        ) if any(not em.dropped_out for em in per_episode) else float("nan"),
+        sensitive_rate=float(
+            np.mean([em.n_sensitive_asked for em in per_episode])
+            / np.mean([em.n_asked for em in per_episode])
+        ) if np.mean([em.n_asked for em in per_episode]) > 0 else float("nan"),
     )
 
 
@@ -358,3 +371,162 @@ def mean_estimation_error(
         for r, theta in zip(results, thetas)
     ]
     return float(np.mean(errors))
+
+
+# ---------------------------------------------------------------------------
+# Posterior calibration
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CalibrationResult:
+    """
+    Calibration diagnostics for a set of final Gaussian posteriors.
+
+    Under a perfectly calibrated Gaussian posterior, the true parameter
+    ``theta_true`` is a sample from ``N(mu_T, Sigma_T)``.  Three equivalent
+    tests follow:
+
+    * **Marginal z-scores** ``(theta_i - mu_i) / sqrt(Sigma_ii)``  should be
+      i.i.d. ``N(0, 1)`` across users and dimensions.
+    * **Mahalanobis distances squared** ``(theta - mu)^T Sigma^{-1} (theta - mu)``
+      should follow a ``chi2(d)`` distribution across users.
+    * **Credible-interval coverage**: the fraction of users whose
+      ``theta_true`` falls inside the alpha-level credible ellipsoid should
+      equal alpha for every alpha in ``[0, 1]``.
+
+    Attributes
+    ----------
+    marginal_z_scores:
+        Standardized residuals ``(theta_i - mu_i) / sqrt(Sigma_ii)`` stacked
+        over all included (user, dimension) pairs. Shape ``(n_users * dim,)``.
+    mahalanobis_sq:
+        Squared Mahalanobis distances. Shape ``(n_users,)``.
+    chi2_quantiles:
+        CDF of ``chi2(dim)`` evaluated at each ``mahalanobis_sq``. Shape
+        ``(n_users,)``.  Under perfect calibration these are ``Uniform(0,1)``.
+    alphas:
+        Evenly-spaced alpha grid in ``[0, 1]``. Shape ``(n_alpha,)``.
+    empirical_coverage:
+        Fraction of users with ``theta_true`` inside the alpha credible
+        ellipsoid for each alpha. Shape ``(n_alpha,)``.  Under perfect
+        calibration this equals ``alphas`` exactly.
+    dim:
+        Latent dimension.
+    n_users:
+        Number of episodes included in the calibration calculation.
+    n_dropouts_excluded:
+        Number of dropout episodes skipped when ``filter_dropouts=True``.
+    """
+
+    marginal_z_scores:  NDArray[np.float64]
+    mahalanobis_sq:     NDArray[np.float64]
+    chi2_quantiles:     NDArray[np.float64]
+    alphas:             NDArray[np.float64]
+    empirical_coverage: NDArray[np.float64]
+    dim:                int
+    n_users:            int
+    n_dropouts_excluded: int = 0
+
+
+def calibration_result(
+    results: list[EpisodeResult],
+    theta_trues: NDArray[np.float64],
+    *,
+    n_alpha: int = 101,
+    filter_dropouts: bool = False,
+) -> CalibrationResult:
+    """
+    Compute posterior calibration diagnostics for a population of episodes.
+
+    Parameters
+    ----------
+    results:
+        Ordered list of ``EpisodeResult`` objects, one per user.
+    theta_trues:
+        True latent trait vectors. Shape ``(n_users, dim)`` or ``(dim,)``.
+        Must be in the same order as ``results``.
+    n_alpha:
+        Number of evenly-spaced alpha values in ``[0, 1]`` for the coverage
+        curve. Default 101 (0 %, 1 %, …, 100 %).
+    filter_dropouts:
+        When ``True``, episodes that ended by dropout are excluded.  Their
+        posteriors are less refined (closer to the prior) and will appear
+        miscalibrated even for a correct model — the ``n_dropouts_excluded``
+        field records how many were removed.
+
+    Returns
+    -------
+    CalibrationResult
+
+    Raises
+    ------
+    ValueError
+        If ``results`` is empty or dimensions are inconsistent.
+    """
+    if not results:
+        raise ValueError("results must contain at least one EpisodeResult.")
+
+    thetas = np.atleast_2d(np.asarray(theta_trues, dtype=float))
+    if thetas.shape[0] != len(results):
+        raise ValueError(
+            f"theta_trues has {thetas.shape[0]} rows but results has "
+            f"{len(results)} entries."
+        )
+
+    pairs = list(zip(results, thetas))
+
+    n_dropouts_excluded = 0
+    if filter_dropouts:
+        before = len(pairs)
+        pairs = [(r, t) for r, t in pairs if not r.terminated_by_dropout]
+        n_dropouts_excluded = before - len(pairs)
+
+    if not pairs:
+        raise ValueError(
+            "No episodes remain after filtering dropouts. "
+            "Set filter_dropouts=False or supply more data."
+        )
+
+    dim = pairs[0][0].final_belief.dim
+    n_users = len(pairs)
+
+    # ---- marginal z-scores ------------------------------------------------
+    # z_{n,i} = (theta_true_{n,i} - mu_{n,i}) / sqrt(Sigma_{n,ii})
+    z_scores: list[NDArray[np.float64]] = []
+    mah_sq:   list[float]               = []
+
+    for result, theta in pairs:
+        mu    = result.final_belief.mu
+        Sigma = result.final_belief.Sigma
+        std   = np.sqrt(np.diag(Sigma))
+        z_scores.append((theta - mu) / std)
+
+        # Mahalanobis^2 — use lstsq for numerical stability when Sigma
+        # approaches singularity late in training.
+        diff = (theta - mu).reshape(-1, 1)
+        Sigma_inv_diff = np.linalg.lstsq(Sigma, diff, rcond=None)[0]
+        mah_sq.append(float((diff.T @ Sigma_inv_diff).item()))
+
+    marginal_z   = np.concatenate(z_scores)         # (n_users * dim,)
+    mah_sq_arr   = np.array(mah_sq, dtype=float)    # (n_users,)
+    chi2_quants  = _chi2_dist.cdf(mah_sq_arr, df=dim).astype(float)
+
+    # ---- coverage curve ---------------------------------------------------
+    alphas    = np.linspace(0.0, 1.0, n_alpha)
+    thresholds = _chi2_dist.ppf(alphas, df=dim)     # chi2 quantiles for each alpha
+    empirical_coverage = np.array(
+        [float(np.mean(mah_sq_arr <= t)) for t in thresholds],
+        dtype=float,
+    )
+
+    return CalibrationResult(
+        marginal_z_scores=marginal_z,
+        mahalanobis_sq=mah_sq_arr,
+        chi2_quantiles=chi2_quants,
+        alphas=alphas,
+        empirical_coverage=empirical_coverage,
+        dim=dim,
+        n_users=n_users,
+        n_dropouts_excluded=n_dropouts_excluded,
+    )

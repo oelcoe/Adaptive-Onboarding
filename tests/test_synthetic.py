@@ -110,6 +110,28 @@ class TestSyntheticItemBank:
 
         assert sensitive_indices == expected_indices
 
+    def test_high_trait_tail_labels_positive_high_threshold_items_for_selected_axes(self) -> None:
+        bank = synthetic_item_bank(
+            n_items=30,
+            dim=4,
+            sensitive_fraction=0.2,
+            sensitivity_assignment="high_trait_tail",
+            sensitive_axes=[1, 3],
+            rng_seed=123,
+            threshold_perturbation=0.2,
+        )
+
+        trait_loading = np.array([
+            max(item.a[1], item.a[3], 0.0)
+            for item in bank
+        ])
+        top_threshold = np.array([item.thresholds[-1] for item in bank])
+        high_tail_score = trait_loading * np.maximum(top_threshold, 1e-12)
+        sensitive_indices = {index for index, item in enumerate(bank) if item.is_sensitive}
+        expected_indices = set(np.argsort(-high_tail_score, kind="stable")[:6])
+
+        assert sensitive_indices == expected_indices
+
     def test_axis_aligned_assignment_can_couple_levels_to_alignment(self) -> None:
         bank = synthetic_item_bank(
             n_items=8,
@@ -165,6 +187,7 @@ class TestSyntheticItemBank:
             ({"sensitive_fraction": 101.0}, "sensitive_fraction"),
             ({"sensitivity_level_range": (-0.1, 1.0)}, "sensitivity_level_range"),
             ({"sensitivity_assignment": "unknown"}, "sensitivity_assignment"),
+            ({"sensitivity_assignment": "high_trait_tail", "sensitive_axes": [0, 3], "dim": 3}, "sensitive_axes"),
         ],
     )
     def test_invalid_inputs_raise(self, kwargs: dict[str, object], match: str) -> None:

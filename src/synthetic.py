@@ -8,7 +8,7 @@ from numpy.typing import NDArray
 
 from .item_bank import Item
 
-SensitivityAssignment = Literal["random", "axis_aligned"]
+SensitivityAssignment = Literal["random", "axis_aligned", "high_trait_tail"]
 
 __all__ = [
     "synthetic_item_bank",
@@ -31,6 +31,7 @@ def synthetic_item_bank(
     rng_seed: int | None = None,
     *,
     sensitivity_assignment: SensitivityAssignment = "random",
+    sensitive_axes: Sequence[int] | None = None,
     vary_sensitivity_levels: bool = False,
     couple_sensitivity_level_to_axis_alignment: bool = False,
     sensitivity_level_range: tuple[float, float] = (0.25, 1.0),
@@ -63,7 +64,12 @@ def synthetic_item_bank(
     sensitivity_assignment:
         How sensitivity labels are assigned. "random" assigns sensitivity
         independently of direction. "axis_aligned" labels the most axis-aligned
-        items as sensitive.
+        items as sensitive. "high_trait_tail" labels items with strong positive
+        loading on selected latent axes and high top-category thresholds as
+        sensitive.
+    sensitive_axes:
+        One or more axes used by high_trait_tail. This lets a few latent traits
+        have high-score-sensitive questions. Defaults to the final latent axis.
     vary_sensitivity_levels:
         If True, sensitive items receive item-specific sensitivity levels sampled
         from sensitivity_level_range. If False, sensitive items receive level
@@ -94,6 +100,7 @@ def synthetic_item_bank(
         threshold_span=threshold_span,
         threshold_perturbation=threshold_perturbation,
         sensitivity_assignment=sensitivity_assignment,
+        sensitive_axes=sensitive_axes,
     )
 
     low_level, high_level = sensitivity_level_range
@@ -106,21 +113,38 @@ def synthetic_item_bank(
     rng = np.random.default_rng(rng_seed)
     directions = _sample_directions(n_items, dim, rng, angle_jitter)
     threshold_template = _base_thresholds(n_categories, threshold_span)
+    thresholds_by_item = None
+    if sensitivity_assignment == "high_trait_tail":
+        thresholds_by_item = [
+            _perturb_thresholds(
+                threshold_template,
+                rng=rng,
+                threshold_perturbation=threshold_perturbation,
+                threshold_span=threshold_span,
+            )
+            for _ in range(n_items)
+        ]
     alignment_scores = axis_alignment_scores(directions)
     sensitive_mask = _assign_sensitive_mask(
         directions=directions,
+        thresholds_by_item=thresholds_by_item,
         sensitive_fraction=sensitive_fraction,
         rng=rng,
         sensitivity_assignment=sensitivity_assignment,
+        sensitive_axes=sensitive_axes,
     )
 
     items: list[Item] = []
     for index in range(n_items):
-        thresholds = _perturb_thresholds(
-            threshold_template,
-            rng=rng,
-            threshold_perturbation=threshold_perturbation,
-            threshold_span=threshold_span,
+        thresholds = (
+            thresholds_by_item[index]
+            if thresholds_by_item is not None
+            else _perturb_thresholds(
+                threshold_template,
+                rng=rng,
+                threshold_perturbation=threshold_perturbation,
+                threshold_span=threshold_span,
+            )
         )
         is_sensitive = bool(sensitive_mask[index])
         sensitivity_level = _sample_sensitivity_level(
@@ -303,6 +327,7 @@ def _validate_common_inputs(
     threshold_span: float,
     threshold_perturbation: float,
     sensitivity_assignment: SensitivityAssignment,
+    sensitive_axes: Sequence[int] | None,
 ) -> None:
     if n_items < 1:
         raise ValueError(f"n_items must be at least 1, got {n_items}.")
@@ -321,9 +346,17 @@ def _validate_common_inputs(
         raise ValueError("threshold_span must be finite and strictly positive.")
     if not np.isfinite(threshold_perturbation) or threshold_perturbation < 0.0:
         raise ValueError("threshold_perturbation must be finite and nonnegative.")
-    if sensitivity_assignment not in {"random", "axis_aligned"}:
+    if sensitivity_assignment not in {"random", "axis_aligned", "high_trait_tail"}:
         raise ValueError(
-            "sensitivity_assignment must be either 'random' or 'axis_aligned'."
+            "sensitivity_assignment must be one of: 'random', 'axis_aligned', "
+            "or 'high_trait_tail'."
+        )
+    axes_to_check = list(sensitive_axes or [])
+    invalid_axes = [axis for axis in axes_to_check if not (0 <= axis < dim)]
+    if invalid_axes:
+        raise ValueError(
+            f"sensitive_axes must be in [0, {dim - 1}] for dim={dim}, "
+            f"got {invalid_axes}."
         )
 
 
@@ -448,9 +481,11 @@ def _strictly_increasing(values: Sequence[float]) -> NDArray[np.float64]:
 def _assign_sensitive_mask(
     *,
     directions: NDArray[np.float64],
+    thresholds_by_item: Sequence[NDArray[np.float64]] | None,
     sensitive_fraction: float,
     rng: np.random.Generator,
     sensitivity_assignment: SensitivityAssignment,
+    sensitive_axes: Sequence[int] | None = None,
 ) -> NDArray[np.bool_]:
     n_items = directions.shape[0]
     fraction = sensitive_fraction / 100.0 if sensitive_fraction > 1.0 else sensitive_fraction
@@ -462,12 +497,36 @@ def _assign_sensitive_mask(
 
     if sensitivity_assignment == "random":
         sensitive_indices = rng.choice(n_items, size=n_sensitive, replace=False)
-    else:
+    elif sensitivity_assignment == "axis_aligned":
         alignment = axis_alignment_scores(directions)
         sensitive_indices = np.argsort(-alignment, kind="stable")[:n_sensitive]
+    else:
+        if thresholds_by_item is None:
+            raise ValueError("thresholds_by_item is required for high_trait_tail assignment.")
+        axes = _resolve_sensitive_axes(
+            dim=directions.shape[1],
+            sensitive_axes=sensitive_axes,
+        )
+        positive_trait_loading = np.maximum(directions[:, axes], 0.0).max(axis=1)
+        top_thresholds = np.array([thresholds[-1] for thresholds in thresholds_by_item])
+        tail_specificity = np.maximum(top_thresholds, 1e-12)
+        high_tail_score = positive_trait_loading * tail_specificity
+        sensitive_indices = np.argsort(-high_tail_score, kind="stable")[:n_sensitive]
 
     mask[sensitive_indices] = True
     return mask
+
+
+def _resolve_sensitive_axes(
+    *,
+    dim: int,
+    sensitive_axes: Sequence[int] | None,
+) -> list[int]:
+    if sensitive_axes is not None:
+        axes = list(dict.fromkeys(int(axis) for axis in sensitive_axes))
+    else:
+        axes = [dim - 1]
+    return axes
 
 
 def _sample_sensitivity_level(
