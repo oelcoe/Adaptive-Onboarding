@@ -5,6 +5,8 @@ Sweep a single parameter across a range of values and compare all five
 policies at each point.  Results are saved individually per condition and
 as a combined sweep summary.
 
+We repeatedly call policy_comparison.run_experiment() for each value in ``values``, varying the parameter named ``param`` while keeping all others fixed.
+
 Usage
 -----
     # Sweep dropout probability (most informative first experiment)
@@ -40,6 +42,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+# Import the policy comparison module, we do not build a seperate experiment for this sweep.
 from experiments.policy_comparison import (
     DEFAULT_DIM,
     DEFAULT_HORIZON,
@@ -76,7 +79,7 @@ SWEEP_PARAMS: dict[str, str] = {
     "items":          "n_items",
 }
 
-INTEGER_SWEEP_PARAMS = {"horizon", "dim", "users", "items"}
+INTEGER_SWEEP_PARAMS = {"horizon", "dim", "users", "items"} # only allow integer values for the horizon, dim, users, and items.
 
 
 def _coerce_sweep_value(param: str, value: float) -> int | float:
@@ -103,14 +106,14 @@ def _latest_matching_result_json(
     candidates = [
         path
         for path in results_dir.glob("*.json")
-        if path.stat().st_mtime >= started_at - 1.0
+        if path.stat().st_mtime >= started_at - 1.0 # only load the result JSON if it was started at least 1 second ago.
     ]
-    for path in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True):
+    for path in sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True): # sort the candidates by the last modified time in descending order.
         data = json.loads(path.read_text(encoding="utf-8"))
-        config = data.get("config", {})
+        config = data.get("config", {}) # get the configuration from the result JSON.
         if all(config.get(key) == value for key, value in expected_config.items()):
-            return data
-    raise RuntimeError(
+            return data # return the result JSON if the configuration matches the expected configuration.
+    raise RuntimeError( # raise an error if the result JSON is not found.   
         "Could not find the result JSON for the current sweep condition. "
         "The individual experiment may not have saved successfully."
     )
@@ -120,7 +123,11 @@ def _latest_matching_result_json(
 # Summary table across the sweep
 # ---------------------------------------------------------------------------
 
-
+# Build the summary table as a list of plain-text lines. We have one row per (sweep_value, policy) showing the key metrics.
+# Sens.rate = mean_sensitive_asked / mean_n_asked.  This is unconfounded by dropout truncation (unlike raw sensitive_asked counts, which fall as users drop out early and never reach further sensitive questions).
+# D-err(cplt) is D-error restricted to episodes that completed the full horizon, isolating information quality from the dropout effect.
+# Est. error is the mean estimation error across all policies.
+# Trait err. is the mean sensitive trait error across all policies. This is only relevant for the high_trait_tail sensitivity assignment.       
 def _sweep_summary_lines(
     param_name: str,
     sweep_values: list[float],
@@ -212,25 +219,25 @@ def _sweep_summary_lines(
 # Main sweep function
 # ---------------------------------------------------------------------------
 
-
+# Run the sweep for a single parameter across a range of values and compare all five policies at each point. Results are saved individually per condition and as a combined sweep summary.
 def run_sweep(
-    param: str,
-    values: list[float],
+    param: str, # the parameter to sweep.	
+    values: list[float], # the values to sweep over.
     *,
-    skip_myopic: bool = False,
+    skip_myopic: bool = False, # if True, exclude myopic_exact from the run (saves ~40x compute per condition; useful for large sweeps).
     # fixed parameters (same defaults as policy_comparison.py)
-    dim: int            = DEFAULT_DIM,
-    n_items: int        = DEFAULT_N_ITEMS,
-    n_categories: int   = DEFAULT_N_CATEGORIES,
+    dim: int            = DEFAULT_DIM, # the number of latent dimensions.
+    n_items: int        = DEFAULT_N_ITEMS, # the number of items in the item bank.
+    n_categories: int   = DEFAULT_N_CATEGORIES, # the number of categories for the items.
     sensitive_frac: float = DEFAULT_SENSITIVE_FRAC,
-    sensitivity_assignment: str = DEFAULT_SENSITIVITY_ASSIGNMENT,
-    sensitive_axes: list[int] | None = DEFAULT_SENSITIVE_AXES,
+    sensitivity_assignment: str = DEFAULT_SENSITIVITY_ASSIGNMENT, # the sensitivity assignment method.
+    sensitive_axes: list[int] | None = DEFAULT_SENSITIVE_AXES, # the sensitive axes to use for the sensitivity assignment.
     p_dropout: float    = DEFAULT_P_DROPOUT,
-    sensitivity_noise_scale: float = DEFAULT_SENSITIVITY_NOISE_SCALE,
-    n_users: int        = DEFAULT_N_USERS,
+    sensitivity_noise_scale: float = DEFAULT_SENSITIVITY_NOISE_SCALE, # the sensitivity noise scale.
+    n_users: int        = DEFAULT_N_USERS, # the number of users in the synthetic user population.
     horizon: int        = DEFAULT_HORIZON,
-    seed_bank: int      = DEFAULT_SEED_BANK,
-    seed_pop: int       = DEFAULT_SEED_POP,
+    seed_bank: int      = DEFAULT_SEED_BANK, # the seed for the synthetic item bank.
+    seed_pop: int       = DEFAULT_SEED_POP, # the seed for the synthetic user population.   
     seed_sim: int       = DEFAULT_SEED_SIM,
 ) -> None:
     """
@@ -248,18 +255,18 @@ def run_sweep(
         If True, exclude myopic_exact from the run (saves ~40x compute per
         condition; useful for large sweeps).
     """
-    if param not in SWEEP_PARAMS:
+    if param not in SWEEP_PARAMS: # raise an error if the parameter is not one of the allowed parameters.
         raise ValueError(
             f"Unknown sweep parameter '{param}'. "
             f"Choose from: {', '.join(SWEEP_PARAMS)}"
         )
 
     kwarg = SWEEP_PARAMS[param]
-    active_policies = [p for p in POLICIES if not (skip_myopic and p == "myopic_exact")]
-    typed_values = [_coerce_sweep_value(param, value) for value in values]
+    active_policies = [p for p in POLICIES if not (skip_myopic and p == "myopic_exact")] # list of policies to compare, excluding myopic_exact if skip_myopic is True.  
+    typed_values = [_coerce_sweep_value(param, value) for value in values] # convert the values to the type expected by run_experiment.
 
     # Base kwargs shared across all conditions
-    base_kwargs: dict = dict(
+    base_kwargs: dict = dict( # base keyword arguments shared across all conditions.
         dim=dim,
         n_items=n_items,
         n_categories=n_categories,
@@ -275,16 +282,16 @@ def run_sweep(
         seed_sim=seed_sim,
     )
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    all_results:          list[dict[str, PolicyMetrics]] = []
-    all_est_errors:       list[dict[str, float]]         = []
-    all_sensitive_rates:  list[dict[str, float]]         = []
-    all_d_error_completed: list[dict[str, float]]        = []
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S") # get the current timestamp.
+    all_results:          list[dict[str, PolicyMetrics]] = [] # list to store the results for each condition.
+    all_est_errors:       list[dict[str, float]]         = [] # list to store the estimation errors for each condition.
+    all_sensitive_rates:  list[dict[str, float]]         = [] # list to store the sensitive rates for each condition.
+    all_d_error_completed: list[dict[str, float]]        = [] # list to store the completed D-error for each condition.
     all_axis_errors: list[dict[str, float]] | None = (
-        [] if sensitivity_assignment == "high_trait_tail" else None
+        [] if sensitivity_assignment == "high_trait_tail" else None # list to store the sensitive trait errors for each condition. This is only relevant for the high_trait_tail sensitivity assignment.
     )
 
-    width = 60
+    width = 60 
     print()
     print("=" * width)
     print(f" SWEEP: {param} over {typed_values}")
@@ -295,20 +302,20 @@ def run_sweep(
 
     results_dir = Path(__file__).resolve().parent / "results"
 
-    for val in typed_values:
+    for val in typed_values: # iterate over the values to sweep over, one val is for example p_drop = 10%
         print(f"{'=' * 20}  {param} = {val}  {'=' * 20}")
-        kwargs = {**base_kwargs, kwarg: val, "policies": active_policies}
+        kwargs = {**base_kwargs, kwarg: val, "policies": active_policies} # create a dictionary of keyword arguments for the run_experiment function.	
 
-        started_at = time.time()
-        pm_dict = run_experiment(**kwargs)
+        started_at = time.time() # get the current time.
+        pm_dict = run_experiment(**kwargs) # run the experiment for the current value.
 
         # Load metrics that run_experiment currently only returns via JSON.
-        expected_sensitive_axes = _resolve_experiment_sensitive_axes(
+        expected_sensitive_axes = _resolve_experiment_sensitive_axes( # resolve the sensitive axes for the experiment.
             dim=kwargs["dim"],
             sensitivity_assignment=kwargs["sensitivity_assignment"],
             sensitive_axes=kwargs["sensitive_axes"],
-        )
-        expected_config = {
+        ) # expected_sensitive_axes is a list of the sensitive axes to use for the sensitivity assignment.
+        expected_config = { # create a dictionary of the expected configuration.
             "dim": kwargs["dim"],
             "n_items": kwargs["n_items"],
             "n_categories": kwargs["n_categories"],
@@ -323,42 +330,42 @@ def run_sweep(
             "seed_population": kwargs["seed_pop"],
             "seed_simulate": kwargs["seed_sim"],
         }
-        latest_json = _latest_matching_result_json(
+        latest_json = _latest_matching_result_json( # load the latest result JSON for the current condition.    
             results_dir,
             started_at=started_at,
             expected_config=expected_config,
         )
-        est_errors = {
+        est_errors = { # create a dictionary of the estimation errors for each policy.
             policy: data["mean_estimation_error"]
             for policy, data in latest_json["policies"].items()
         }
-        axis_errors = {
+        axis_errors = { # create a dictionary of the sensitive trait errors for each policy. This is only relevant for the high_trait_tail sensitivity assignment.
             policy: data.get("mean_sensitive_trait_error", float("nan"))
             for policy, data in latest_json["policies"].items()
         }
-        sensitive_rates = {
+        sensitive_rates = { # create a dictionary of the sensitive rates for each policy.
             policy: data.get("sensitive_rate", float("nan"))
             for policy, data in latest_json["policies"].items()
         }
-        d_error_completed = {
+        d_error_completed = { # create a dictionary of the completed D-error for each policy.
             policy: data.get("mean_final_d_error_completed", float("nan"))
             for policy, data in latest_json["policies"].items()
         }
 
-        all_results.append(pm_dict)
-        all_est_errors.append(est_errors)
-        all_sensitive_rates.append(sensitive_rates)
-        all_d_error_completed.append(d_error_completed)
+        all_results.append(pm_dict) # store the results for the current condition.
+        all_est_errors.append(est_errors) # store the estimation errors for the current condition.
+        all_sensitive_rates.append(sensitive_rates) # store the sensitive rates for the current condition.
+        all_d_error_completed.append(d_error_completed) # store the completed D-error for the current condition.
         if all_axis_errors is not None:
-            all_axis_errors.append(axis_errors)
+            all_axis_errors.append(axis_errors) # store the sensitive trait errors for the current condition. This is only relevant for the high_trait_tail sensitivity assignment.
 
     # ---- combined summary ----
-    print()
+    print() # print a blank line.
     print("=" * width)
     print(f" SWEEP SUMMARY: {param}")
     print("=" * width)
-    print()
-    summary_lines = _sweep_summary_lines(
+    print() # print a blank line.
+    summary_lines = _sweep_summary_lines( # build the summary table as a list of plain-text lines.  
         param_name=param,
         sweep_values=list(typed_values),
         all_results=all_results,
@@ -366,59 +373,59 @@ def run_sweep(
         policies=active_policies,
         all_axis_errors=all_axis_errors,
     )
-    for line in summary_lines:
+    for line in summary_lines: # print the summary table.
         print(line)
-    print()
+    print() # print a blank line.   
 
     # ---- save combined JSON ----
-    results_dir = Path(__file__).resolve().parent / "results"
-    stem = f"{timestamp}_sweep_{param.replace('-', '_')}"
-    combined = {
+    results_dir = Path(__file__).resolve().parent / "results" # get the results directory.
+    stem = f"{timestamp}_sweep_{param.replace('-', '_')}" # create a stem for the combined results.
+    combined = { # create a dictionary of the combined results.
         "timestamp": timestamp,
         "sweep_param": param,
         "sweep_values": list(typed_values),
         "fixed_config": {k: v for k, v in base_kwargs.items() if k != kwarg},
         "conditions": [
             {
-                "value": val,
+                "value": val, # store the value for the current condition.
                 "policies": {
                     policy: {
-                        "dropout_rate": pm_dict[policy].dropout_rate,
-                        "mean_n_answered": pm_dict[policy].mean_n_answered,
-                        "mean_n_asked": pm_dict[policy].mean_n_asked,
-                        "mean_sensitive_asked": pm_dict[policy].mean_sensitive_asked,
-                        "sensitive_rate": all_sensitive_rates[index].get(policy, float("nan")),
-                        "mean_final_d_error": pm_dict[policy].mean_final_d_error,
-                        "mean_final_d_error_completed": all_d_error_completed[index].get(policy, float("nan")),
-                        "mean_logdet_reduction": pm_dict[policy].mean_logdet_reduction,
-                        "mean_estimation_error": est_errors.get(policy, float("nan")),
+                        "dropout_rate": pm_dict[policy].dropout_rate, # store the dropout rate for the current condition.
+                        "mean_n_answered": pm_dict[policy].mean_n_answered, # store the number of questions answered for the current condition.
+                        "mean_n_asked": pm_dict[policy].mean_n_asked, # store the number of questions asked for the current condition.
+                        "mean_sensitive_asked": pm_dict[policy].mean_sensitive_asked, # store the number of sensitive questions asked for the current condition.
+                        "sensitive_rate": all_sensitive_rates[index].get(policy, float("nan")), # store the sensitive rate for the current condition.
+                        "mean_final_d_error": pm_dict[policy].mean_final_d_error, # store the final D-error for the current condition.
+                        "mean_final_d_error_completed": all_d_error_completed[index].get(policy, float("nan")), # store the completed D-error for the current condition.
+                        "mean_logdet_reduction": pm_dict[policy].mean_logdet_reduction, # store the mean logdet reduction for the current condition.
+                        "mean_estimation_error": est_errors.get(policy, float("nan")), # store the estimation error for the current condition.  
                         "mean_sensitive_trait_error": (
-                            all_axis_errors[index].get(policy, float("nan"))
+                            all_axis_errors[index].get(policy, float("nan")) # store the sensitive trait error for the current condition. This is only relevant for the high_trait_tail sensitivity assignment.
                             if all_axis_errors is not None
                             else None
                         ),
-                    }
+                    } # store the policy metrics for the current condition.
                     for policy in active_policies
                     if policy in pm_dict
-                },
-            }
+                }, # store the policy metrics for the current condition.
+            } # store the condition for the current value.
             for index, (val, pm_dict, est_errors) in enumerate(
-                zip(typed_values, all_results, all_est_errors)
+                zip(typed_values, all_results, all_est_errors) # iterate over the values, results, and estimation errors.
             )
-        ],
-    }
-    json_path = results_dir / f"{stem}.json"
-    json_path.write_text(json.dumps(combined, indent=2), encoding="utf-8")
+        ], # store the conditions for the current value.
+    } # store the combined results.
+    json_path = results_dir / f"{stem}.json" # create a path to the combined results JSON file.
+    json_path.write_text(json.dumps(combined, indent=2), encoding="utf-8") # save the combined results to the JSON file.
 
     # ---- save combined Markdown ----
-    md_lines = [
+    md_lines = [ # build the Markdown lines for the combined results.
         f"# Sweep: {param}  --  {timestamp}",
         "",
         "## Fixed configuration",
         "",
         "| Parameter | Value |",
         "|---|---|",
-        *[f"| {k} | {v} |" for k, v in base_kwargs.items() if k != kwarg],
+        *[f"| {k} | {v} |" for k, v in base_kwargs.items() if k != kwarg], # store the fixed configuration in the Markdown file.
         "",
         f"## Results by {param}",
         "",
@@ -431,13 +438,13 @@ def run_sweep(
         "_Add your observations here._",
         "",
     ]
-    md_path = results_dir / f"{stem}.md"
-    md_path.write_text("\n".join(md_lines), encoding="utf-8")
+    md_path = results_dir / f"{stem}.md" # create a path to the combined results Markdown file.
+    md_path.write_text("\n".join(md_lines), encoding="utf-8") # save the combined results to the Markdown file.
 
     repo_root = Path(__file__).resolve().parents[1]
-    print("Saved sweep summary:")
-    print(f"  JSON     : {json_path.relative_to(repo_root)}")
-    print(f"  Markdown : {md_path.relative_to(repo_root)}")
+    print("Saved sweep summary:") # print a message that the sweep summary has been saved.
+    print(f"  JSON     : {json_path.relative_to(repo_root)}") # print the path to the combined results JSON file.
+    print(f"  Markdown : {md_path.relative_to(repo_root)}") # print the path to the combined results Markdown file.
 
 
 # ---------------------------------------------------------------------------
@@ -445,8 +452,8 @@ def run_sweep(
 # ---------------------------------------------------------------------------
 
 
-def _parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(
+def _parse_args() -> argparse.Namespace: # parse the command line arguments.
+    p = argparse.ArgumentParser( # create an argument parser.   
         description="Sweep one parameter across a policy comparison experiment.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -481,7 +488,7 @@ def _parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": # run the sweep when the script is called directly.
     args = _parse_args()
     run_sweep(
         param=args.param,
